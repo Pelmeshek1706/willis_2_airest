@@ -1,7 +1,7 @@
-import openwillis.speech
-print()
-print("Stay here....")
-print(openwillis.speech.__file__)
+# import openwillis.speech
+# print()
+# print("Stay here....")
+# print(openwillis.speech.__file__)
 
 import openwillis.speech as ows
 import openwillis.transcribe as owt
