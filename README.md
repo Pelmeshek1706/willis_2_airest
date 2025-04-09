@@ -26,11 +26,13 @@ The installation script is named install_openwillis_modules.sh. Make sure it is 
     ```bash
     ./install_openwillis_modules.sh
     
-## Usage
+## Usage:
 
 ### Based: ###
 - Run test_script.py file: 
     ```bash
     python3 test_code.py
     
-
+### Advanced ###
+1. Transcribe audio using <code>Transcriber</code> class
+2. Get speech characteristics using 
