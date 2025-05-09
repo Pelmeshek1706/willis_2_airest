@@ -78,6 +78,45 @@ FIRST_PERSON_PRONOUNS_T = {'en' : {"I", "me", "my", "mine", "myself"},
 PRESENT = ["VBP", "VBZ"]
 PAST = ["VBD", "VBN"]
 
+from transformers import pipeline
+
+class SentimentAnalyzer:
+    """
+    A class to perform sentiment analysis using VADER.
+    """
+
+    def __init__(self):
+        self.model = "cardiffnlp/twitter-xlm-roberta-base-sentiment"
+        self.sentiment = self.__return_sentiment_model()
+
+
+    def __return_sentiment_model(self):
+        model_name = "cardiffnlp/twitter-xlm-roberta-base-sentiment"
+        sentiment = pipeline(
+                        "sentiment-analysis",
+                        model=model_name,
+                        tokenizer=model_name,
+                        top_k=None 
+                    )
+        return sentiment
+        
+    def polarity_scores(self, text):
+        """
+        Returns the sentiment scores for the given text.
+        """
+        results = self.sentiment(text)
+        labels_list = results[0]
+        tmp = {entry['label']: entry['score'] for entry in labels_list}
+        compound = abs(tmp.get('positive', 0.0) - tmp.get('negative', 0.0))
+        return {
+                'neg':      tmp.get('negative', 0.0),
+                'neu':      tmp.get('neutral',  0.0),
+                'pos':      tmp.get('positive', 0.0),
+                'compound': compound
+            }
+    
+
+
 def get_mattr(text, lemmatizer, window_size=50):
     """
     ------------------------------------------------------------------------------------------------------
@@ -472,12 +511,12 @@ def get_sentiment(df_list, text_list, measures, lang='en'):
         _, turn_list, full_text = text_list
         lemmatizer = spacy.load("uk_core_news_sm") if lang in ['ua', 'uk'] else spacy.load('en_core_web_sm') # should be changed to normal model
 
-        sentiment = SentimentIntensityAnalyzer()
+        # sentiment = SentimentIntensityAnalyzer()
+        sentiment = SentimentAnalyzer()
         cols = [measures["neg"], measures["neu"], measures["pos"], measures["compound"], measures["speech_mattr_5"], measures["speech_mattr_10"], measures["speech_mattr_25"], measures["speech_mattr_50"], measures["speech_mattr_100"]]
 
         for idx, u in enumerate(turn_list):
             try:
-
                 sentiment_dict = sentiment.polarity_scores(u)
                 mattrs = [get_mattr(u, lemmatizer, window_size=ws) for ws in [5, 10, 25, 50, 100]]
                 turn_df.loc[idx, cols] = list(sentiment_dict.values()) + mattrs
