@@ -36,3 +36,4 @@ The installation script is named install_openwillis_modules.sh. Make sure it is 
 ### Advanced ###
 1. Transcribe audio using <code>Transcriber</code> class
 2. Get speech characteristics using 
+
