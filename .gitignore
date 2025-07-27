@@ -4,3 +4,4 @@ __pycache__/
 **/.DS_Store/
 .venv/
 .DS_Store
+xlmr-cosmus-1epoch/
