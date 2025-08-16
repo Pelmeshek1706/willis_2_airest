@@ -124,3 +124,79 @@ This large dev-set gap is likely explained by differences in how each model hand
 
 Overall, **spaCy-uk** demonstrates reliable tense prediction for canonical verbs, making it suitable for downstream analysis involving verb tense usage.  
 However, for tasks requiring precise tense detection in non-verb forms, additional model fine-tuning or post-processing rules may be necessary to bridge the performance gap observed in the dev split.
+
+## Section 1.3 Validation of Syllable Counter and “Syllables-per-Minute” Metric (Ukrainian)
+
+### Goal (Brief)
+
+For timing biomarkers (SPM, articulation rate), an accurate syllable count is required. English rules from NLTK are not suitable for Ukrainian, so we built a custom spaCy-uk component and validated it on real data, comparing it with a text-based baseline (Pyphen) and an acoustic gold standard (Praat Syllable Nuclei v3).
+
+---
+
+### Dataset: “Telebachennia Toronto” (Summary)
+
+- **Source:** A popular Ukrainian satirical news show “Telebachennia Toronto” / Toronto TV (hosted by the persona Michael Shchur, created by journalist Roman Vintoniv). The show is regularly described in English-language media as a “news with comedy” format aimed at explaining complex topics to a wide audience.
+- **Corpus format:** 5–7-second audio clips from episodes, processed with a transcriber; fields: path, transcript, transcript_len, audio_dur_sec. Total of 18,302 clips, average length ≈ 5 s.
+- **Important:** Some transcripts don’t fully match the audio (repetitions/interjections/cuts), affecting “text ↔ audio” comparison.
+- **Context:** See profiles on [The Fix](https://thefix.media/) and [Kyiv Independent](https://kyivindependent.com/) for more info about the Toronto TV project in English.
+
+---
+
+### Syllable Counting Methods
+
+**Text-based:**
+1. **spaCy-uk (our component):** Rules based on Pyphen + Ukrainian-specific patches (apostrophe/hyphens/“йо”, rare syllabic “r/l”).
+2. **Pyphen:** Hyphenation as a simple approximation of syllabic structure.
+3. **NLTK (SSP):** Universal sonority tokenizer (used as a sanity-check).
+
+**Audio-based:**
+4. **Praat Syllable Nuclei v3 (Original):** Detects intensity peaks with voicing filter; also provides phonation time and pauses.
+5. **Praat-Like:** Our simplified implementation of the same principle in Python/Parselmouth (without external .praat scripts).
+
+---
+
+### Evaluation Protocol
+
+- For each clip, compute: syll_spacy, syll_pyphen, syll_nltk, syll_praat_original, syll_praat_like; also SPM = syllables / (duration/60).
+- **Metrics:** Pairwise MAE, Bias, Pearson r, Spearman ρ, Bland–Altman LOA, and ICC(2,1) (absolute agreement).
+- Praat v3 threshold settings were taken from open recommendations, without fine-tuning for noise/channel.
+
+---
+
+### Results (Full Run)
+
+#### 1) Main MAE Summary
+
+| Method Pair              | MAE   |
+|--------------------------|-------|
+| spaCy-uk vs Pyphen       | 0.517 |
+| spaCy-uk vs NLTK         | 3.776 |
+| Praat-Like vs Praat Orig | 2.423 |
+| spaCy-uk vs Praat Orig   | 9.778 |
+| Pyphen vs Praat Orig     | 9.836 |
+| NLTK vs Praat Orig       | 6.680 |
+
+Overall ICC(2,1) across all raters: **0.656** (moderate).
+
+#### 2) Within-Class Comparisons (Audio and Text)
+
+##### Audio ↔ Audio (n=18,210)
+- MAE = 2.423, Bias = −1.082; r = 0.908, ρ = 0.892; LOA ≈ [−6.94; 4.78]; ICC(2,1) within audio = 0.897.
+- **Conclusion:** Praat-Like closely approximates Praat v3; we use Praat Original as the gold standard (it also provides phonation time).
+
+##### Text ↔ Text (n=18,210)
+- spaCy-uk vs Pyphen: MAE = 0.517, Bias = −0.106; r = 0.988, ρ = 0.989; LOA is narrow.
+- spaCy-uk vs NLTK: MAE = 3.776, Bias = +3.425; r = 0.961, ρ = 0.956.
+- Pyphen vs NLTK: MAE = 3.681, Bias = +3.532; r = 0.972, ρ = 0.965.
+- ICC(2,1) within text = 0.937.
+- **Conclusion:** spaCy-uk and Pyphen are well-aligned; NLTK (SSP) systematically overestimates or segments differently for Ukrainian, so it’s left as a sanity-check.
+
+---
+
+### Interpretation
+
+- Everything is logical within each class:
+    - Audio methods show high agreement (ICC ≈ 0.90), i.e., acoustic syllable nucleus detection is robust.
+    - Text counters are consistent with each other (spaCy-uk ↔ Pyphen).
+- Text ↔ audio diverges significantly (MAE ≈ 9–10; overall ICC ≈ 0.66) due to partial mismatch between transcripts and audio in the corpus — a common situation for auto-generated subtitles/snippets. On subsets where “text ≈ audio,” the divergence is small (by manual check).
+- For clinical timing (SPM, articulation rate), it is correct to rely on the audio gold standard (Praat v3) and use its phonation time. The described methodology is widely used precisely without a transcript.
