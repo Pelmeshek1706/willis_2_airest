@@ -59,7 +59,7 @@ The goal was to ensure that the **spaCy-uk** model used in OpenWillis achieves e
 - The data format is CoNLL-U, fully compatible with UD processing tools.  
 - The main objective of using this dataset is to assess the accuracy of POS tagging and the extraction of the `Tense` feature for verbs.
 
-## Section 1.1 — POS Tagging Evaluation
+## Section 1.2 — POS Tagging Evaluation
 
 Two tools were evaluated:
 - **spaCy-uk** — a Universal Dependencies–based model integrated into OpenWillis for Ukrainian.  
@@ -92,7 +92,7 @@ The observed differences between the two models are within ±0.3 percentage poin
 This confirms that **spaCy-uk** maintains near-expert accuracy for POS tagging on Ukrainian, making it fully reliable for downstream features in OpenWillis that depend on POS counts (e.g., first-person pronoun percentage, noun–verb ratio, adjective density).  
 Given these results, spaCy-uk can be confidently used as the primary POS tagging module for Ukrainian in production workflows without compromising accuracy compared to Stanza-uk.
 
-## Section 1.2 — Tense Evaluation
+## Section 1.3 — Tense Evaluation
 
 In addition to UPOS tagging, we evaluated the accuracy of extracting the `Tense` morphological feature from the UD_Ukrainian-ParlaMint dataset.  
 The `Tense` feature in Universal Dependencies denotes grammatical tense (e.g., `Past`, `Pres`, `Fut`) and is primarily relevant for verbs, although it can appear in other categories (such as participles tagged as `ADJ`).
@@ -125,7 +125,7 @@ This large dev-set gap is likely explained by differences in how each model hand
 Overall, **spaCy-uk** demonstrates reliable tense prediction for canonical verbs, making it suitable for downstream analysis involving verb tense usage.  
 However, for tasks requiring precise tense detection in non-verb forms, additional model fine-tuning or post-processing rules may be necessary to bridge the performance gap observed in the dev split.
 
-## Section 1.3 Validation of Syllable Counter and “Syllables-per-Minute” Metric (Ukrainian)
+## Section 1.4 Validation of Syllable Counter and “Syllables-per-Minute” Metric (Ukrainian)
 
 ### Goal (Brief)
 
