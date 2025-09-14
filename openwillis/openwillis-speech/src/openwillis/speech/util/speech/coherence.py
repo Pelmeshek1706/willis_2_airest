@@ -11,6 +11,7 @@ from transformers import BertTokenizer, BertModel, BertForMaskedLM
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 import torch
+import torch.nn.functional as F
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
@@ -295,15 +296,45 @@ def calculate_log_probs(input_ids, masked_input_ids, model, start_offset, end_of
 
     ------------------------------------------------------------------------------------------------------
     """
-    input_ids_filtered = input_ids[:, start_offset:end_offset+1]
-    masked_input_ids_filtered = masked_input_ids[:, start_offset:end_offset+1]
-    idx_adjusted = idx - start_offset
+    # input_ids_filtered = input_ids[:, start_offset:end_offset+1]
+    # masked_input_ids_filtered = masked_input_ids[:, start_offset:end_offset+1]
+    # idx_adjusted = idx - start_offset
+
+    # with torch.no_grad():
+    #     outputs = model(input_ids=masked_input_ids_filtered, labels=input_ids_filtered)
+    # logits = outputs.logits[0, idx_adjusted].softmax(dim=0)
+    # true_log_prob = logits[input_ids[0, idx]].log().item()
+    
+    # return true_log_prob
+    max_len = int(getattr(model.config, "max_position_embeddings", 512))
+    seq_len = int(input_ids.size(1))
+
+    start = max(0, int(start_offset))
+    end = min(int(end_offset), seq_len - 1)
+
+    L = end - start + 1
+    if L > max_len:
+        left_budget = min(idx - start, (max_len - 1) // 2)
+        right_budget = max_len - 1 - left_budget
+        start = idx - left_budget
+        end = min(idx + right_budget, seq_len - 1)
+        L = end - start + 1
+        if L > max_len:
+            start = end - (max_len - 1)
+
+    input_ids_filtered = input_ids[:, start:end + 1]
+    masked_input_ids_filtered = masked_input_ids[:, start:end + 1]
+    idx_adjusted = idx - start
+
+    assert 0 <= idx_adjusted < input_ids_filtered.size(1), "idx out of bounds"
 
     with torch.no_grad():
-        outputs = model(input_ids=masked_input_ids_filtered, labels=input_ids_filtered)
-    logits = outputs.logits[0, idx_adjusted].softmax(dim=0)
-    true_log_prob = logits[input_ids[0, idx]].log().item()
-    
+        out = model(input_ids=masked_input_ids_filtered, labels=input_ids_filtered)
+
+    # logits: [batch=1, seq_len', vocab];
+    log_probs = F.log_softmax(out.logits[0, idx_adjusted], dim=-1)
+    true_token_id = int(input_ids[0, idx].item())
+    true_log_prob = float(log_probs[true_token_id].item())
     return true_log_prob
 
 def calculate_perplexity(text, model, tokenizer):
@@ -338,29 +369,91 @@ def calculate_perplexity(text, model, tokenizer):
         return np.nan
 
     tokens = tokenizer(clean_text, return_tensors='pt')
-    input_ids = tokens.input_ids
-    masked_input_ids = input_ids.clone()
+    input_ids = tokens.input_ids  # [1, T]
 
-    log_probs_dict = {2: [], 5: [], 7: [], 256: []}
+    # Determine device from model and move inputs
+    try:
+        device = next(model.parameters()).device
+    except Exception:
+        device = torch.device('cpu')
+    input_ids = input_ids.to(device)
 
-    # Iterate over each token in the input text
-    for i in range(input_ids.size(1)):
-        masked_input_ids[0, i] = tokenizer.mask_token_id
+    # Helper to adjust window respecting model max length
+    def _adjust_bounds(i, window_size, seq_len, max_len):
+        start = max(0, i - window_size)
+        end = min(seq_len - 1, i + window_size)
+        L = end - start + 1
+        if L > max_len:
+            left_budget = min(i - start, (max_len - 1) // 2)
+            right_budget = max_len - 1 - left_budget
+            start = i - left_budget
+            end = min(i + right_budget, seq_len - 1)
+            L = end - start + 1
+            if L > max_len:
+                start = end - (max_len - 1)
+        return int(start), int(end)
 
-        # Calculate log probabilities for different window sizes
-        for window_size in [256, 2, 5, 7]:
-            start = max(0, i - window_size)
-            end = min(input_ids.size(1), i + window_size)
-            log_probs_dict[window_size].append(calculate_log_probs(input_ids, masked_input_ids, model, start, end, i))
+    def _batched_log_probs_for_window(window_size, batch_size=64):
+        seq_len = int(input_ids.size(1))
+        max_len_model = int(getattr(model.config, 'max_position_embeddings', 512))
+        mask_id = tokenizer.mask_token_id
+        pad_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else 0
 
-        # Unmask the token for the next iteration
-        masked_input_ids[0, i] = input_ids[0, i]
+        all_log_probs = []
+        indices = list(range(seq_len))
+        from tqdm import tqdm
+        with torch.no_grad():
+            for b_start in tqdm(range(0, seq_len, batch_size), desc="Batch processing"):
+                b_end = min(seq_len, b_start + batch_size)
+                batch_idx = indices[b_start:b_end]
+
+                # Prepare variable-length masked segments
+                segs = []
+                adj_positions = []
+                true_ids = []
+                maxL = 0
+                for i in batch_idx:
+                    start, end = _adjust_bounds(i, window_size, seq_len, max_len_model)
+                    seg = input_ids[0, start:end + 1].clone()
+                    idx_adj = i - start
+                    seg[idx_adj] = mask_id
+                    segs.append(seg)
+                    adj_positions.append(idx_adj)
+                    true_ids.append(int(input_ids[0, i].item()))
+                    if seg.numel() > maxL:
+                        maxL = int(seg.numel())
+
+                # Pad to maxL
+                B = len(segs)
+                batch_inputs = torch.full((B, maxL), pad_id, dtype=input_ids.dtype, device=device)
+                attn_mask = torch.zeros((B, maxL), dtype=torch.long, device=device)
+                for r, seg in enumerate(segs):
+                    L = int(seg.numel())
+                    batch_inputs[r, :L] = seg
+                    attn_mask[r, :L] = 1
+
+                outputs = model(input_ids=batch_inputs, attention_mask=attn_mask)
+                logits = outputs.logits  # [B, maxL, V]
+                # Select position logits and compute log-softmax only at masked positions
+                rows = torch.arange(len(adj_positions), device=device)
+                pos_logits = logits[rows, torch.tensor(adj_positions, device=device), :]
+                pos_log_probs = torch.log_softmax(pos_logits, dim=-1)
+                gathered = pos_log_probs[rows, torch.tensor(true_ids, device=device)]
+                all_log_probs.extend(gathered.detach().cpu().tolist())
+
+        return all_log_probs
+
+    # Compute log-probs for each window in batched fashion (4 passes)
+    log_probs_256 = _batched_log_probs_for_window(256)
+    log_probs_2 = _batched_log_probs_for_window(2)
+    log_probs_5 = _batched_log_probs_for_window(5)
+    log_probs_7 = _batched_log_probs_for_window(7)
 
     # Calculate perplexity for each window size
-    perplexity = np.exp(-np.mean(log_probs_dict[256]))
-    perplexity_5 = np.exp(-np.mean(log_probs_dict[2]))
-    perplexity_11 = np.exp(-np.mean(log_probs_dict[5]))
-    perplexity_15 = np.exp(-np.mean(log_probs_dict[7]))
+    perplexity = float(np.exp(-np.mean(log_probs_256))) if len(log_probs_256) else np.nan
+    perplexity_5 = float(np.exp(-np.mean(log_probs_2))) if len(log_probs_2) else np.nan
+    perplexity_11 = float(np.exp(-np.mean(log_probs_5))) if len(log_probs_5) else np.nan
+    perplexity_15 = float(np.exp(-np.mean(log_probs_7))) if len(log_probs_7) else np.nan
 
     return perplexity, perplexity_5, perplexity_11, perplexity_15
 

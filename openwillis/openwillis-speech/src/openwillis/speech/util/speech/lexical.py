@@ -402,19 +402,62 @@ def count_space_tokens(text, lang='en'):
 
 
 def get_tag_l(full_text, lang='en'):
+    """
+    Returns a list of tuples (text, pos, verb_tense).
+    If given a list, produce exactly one tag per input element to keep
+    alignment with word_df rows.
+    """
     if lang in ['ua', 'uk']:
         nlp = spacy.load("uk_core_news_sm")
     else:
         nlp = spacy.load("en_core_web_sm")
-    
-    if isinstance(full_text, list):
-        full_text = " ".join(full_text)
-        
-    doc = nlp(full_text)
+
     tags = []
-    
+
+    # Maintain 1:1 alignment when a list of words is provided
+    if isinstance(full_text, list):
+        for w in full_text:
+            # Process each token individually to avoid spaCy retokenization expanding counts
+            doc = nlp(w if isinstance(w, str) else str(w))
+            # Pick first non-space token if available, else fall back to empty
+            token = next((t for t in doc if t.pos_ != "SPACE"), None)
+            if token is None:
+                # No token produced (e.g., empty/space-only). Mark as Other/None keeping alignment
+                pos = "Other"
+                verb_tense = None
+                text = w
+            else:
+                text = token.text
+                if lang in ['ua', 'uk']:
+                    pos = TAG_DICT_T[lang].get(token.pos_, token.pos_)
+                    if token.pos_ in {"VERB", "AUX"}:
+                        tense_vals = token.morph.get("Tense")
+                        if tense_vals:
+                            if "Past" in tense_vals:
+                                verb_tense = "Past"
+                            elif "Pres" in tense_vals:
+                                verb_tense = "Present"
+                            else:
+                                verb_tense = "Other"
+                        else:
+                            verb_tense = "Other"
+                    else:
+                        verb_tense = None
+                else:
+                    pos = TAG_DICT_T[lang].get(token.tag_, token.tag_)
+                    if token.tag_ in PRESENT:
+                        verb_tense = "Present"
+                    elif token.tag_ in PAST:
+                        verb_tense = "Past"
+                    else:
+                        verb_tense = "Other"
+            tags.append((text, pos, verb_tense))
+        return tags
+
+    # If given a single string, process as a whole and filter out SPACE tokens
+    doc = nlp(full_text)
     for token in doc:
-        if token.pos_ in ["SPACE", "PUNCT"]:
+        if token.pos_ == "SPACE":
             continue
         if lang in ['ua', 'uk']:
             pos = TAG_DICT_T[lang].get(token.pos_, token.pos_)
@@ -430,7 +473,7 @@ def get_tag_l(full_text, lang='en'):
                 else:
                     verb_tense = "Other"
             else:
-                verb_tense = None 
+                verb_tense = None
         else:
             pos = TAG_DICT_T[lang].get(token.tag_, token.tag_)
             if token.tag_ in PRESENT:
@@ -440,7 +483,7 @@ def get_tag_l(full_text, lang='en'):
             else:
                 verb_tense = "Other"
         tags.append((token.text, pos, verb_tense))
-        
+
     return tags
 
 def get_pos_tag(df_list, text_list, measures, lang="en"):
@@ -510,9 +553,8 @@ def get_sentiment(df_list, text_list, measures, lang='en'):
         word_df, turn_df, summ_df = df_list
         _, turn_list, full_text = text_list
         lemmatizer = spacy.load("uk_core_news_sm") if lang in ['ua', 'uk'] else spacy.load('en_core_web_sm') # should be changed to normal model
-
-        # sentiment = SentimentIntensityAnalyzer()
-        sentiment = SentimentAnalyzer()
+        
+        sentiment = SentimentIntensityAnalyzer() if lang == 'en' else SentimentAnalyzer()
         cols = [measures["neg"], measures["neu"], measures["pos"], measures["compound"], measures["speech_mattr_5"], measures["speech_mattr_10"], measures["speech_mattr_25"], measures["speech_mattr_50"], measures["speech_mattr_100"]]
 
         for idx, u in enumerate(turn_list):
