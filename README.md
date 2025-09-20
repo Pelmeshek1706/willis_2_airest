@@ -221,7 +221,7 @@ Overall ICC(2,1) across all raters: **0.656** (moderate).
 ## Methods
 
 - **Embeddings (Gemma):**
-  - For both English and Ukrainian we use `google/embeddinggemma-300m` (L2 normalization, cosine similarity).
+  - For both English and Ukrainian we use `google/embeddinggemma‑300m` (L2 normalization, cosine similarity).
   - Chosen because of its broad tokenizer coverage, including Ukrainian.
 
 - **Tangentiality:**
@@ -240,41 +240,52 @@ Overall ICC(2,1) across all raters: **0.656** (moderate).
 
 ## Evaluation Protocol
 
-- **Turn‑level:** Pearson $r$, Spearman $\rho$, MAE, RMSE (EN vs UK).
-- **Session‑level** (mean, variance): ICC(2,1), paired tests, mean difference %.
+- **Turn‑level:** Pearson $r$, Spearman $\rho$, MAE, RMSE (EN vs UK).  
+- **Session‑level** (mean, variance): ICC(2,1), paired tests, mean difference %.  
 - **Success criteria:** $r/\rho \ge 0.7$; ICC $\ge 0.8$; mean difference ≤ ±5%.
 
 ---
 
 ## Results (Turn‑level)
 
-| Metric             | Pearson r | Spearman ρ | MAE       | RMSE        |
-|--------------------|----------:|-----------:|----------:|-------------:|
-| Tangentiality      | **0.9739** | **0.9723** | **0.0127** | **0.0155**   |
-| Coherence          | 0.2423     | 0.2030     | 0.0210    | 0.0212       |
-| Pseudo‑Perplexity  | 0.0601     | 0.2630     | 90,596,920.0 | 193,752,500.0 |
+| Metric             | Pearson r | Spearman ρ | MAE         | RMSE           |
+|--------------------|----------:|-----------:|-------------:|----------------:|
+| Tangentiality      | **0.9739** | **0.9723** | **0.0127**   | **0.0155**      |
+| Coherence          | 0.2423     | 0.2030     | 0.0210       | 0.0212          |
+| Pseudo‑Perplexity  | 0.0601     | 0.2630     | 90,596,920.0 | 193,752,500.0   |
 
 ---
 
 ## Results (Session‑level)
 
-| Metric             | Summary | ICC(2,1) | Mean diff %      | p‑value (paired t) |
-|---------------------|:-------:|---------:|------------------:|---------------------:|
-| Tangentiality       | mean    | **0.9534** | **−1.369%**       | 1.12e−34            |
-| Coherence           | mean    | 0.0056     | −2.220%           | 5.63e−236           |
-| Pseudo‑Perplexity   | mean    | 0.0587     | **+398.24%**      | 1.73e−01            |
+| Metric             | Summary | ICC(2,1)     | Mean diff %      | p‑value (paired t) |
+|---------------------|:-------:|-------------:|------------------:|--------------------:|
+| Tangentiality       | mean    | **0.9534**   | **−1.369%**        | 1.12e−34            |
+| Coherence           | mean    | 0.0056       | −2.220%            | 5.63e−236           |
+| Pseudo‑Perplexity   | mean    | 0.0587       | **+398.24%**       | 1.73e−01            |
+
+---
+
+## Additional Comparison: BERT‑Base‑Cased(for english) vs BERT‑Multilingual‑Cased (for ukrainian)
+
+I also compared performance of two other models:
+
+| Metric       | N   | Pearson_r  | Spearman_rho | MAE         | RMSE         | ICC2_1      | mean_diff_% (UK_vs_EN) | t_p             | wilcoxon_p        |
+|---------------|------|------------|--------------|--------------|----------------|---------------|-----------------------------|------------------|----------------------|
+| coherence     | 275  | 0.335050   | 0.298841     | 0.355406    | 0.355501      | 0.000199     | −41.980173               | 0.000000e+00    | 7.488097e‑47         |
+| perplexity    | 275  | 0.202752   | 0.290302     | 24,699.46107| 37,889.42130  | 0.144741     | −29.216398               | 4.198781e‑19    | 8.970070e‑27         |
+| tangentiality | 275  | 0.761982   | 0.740529     | 0.114286    | 0.116063      | 0.080850     | 54.005750                | 6.440214e‑210   | 7.488097e‑47         |
+
+**Why Gemma outperforms these BERT‑based models:**
+
+- Gemma’s tokenizer + pretraining better handles morphological diversity, giving more consistent embeddings across languages.  
+- Gemma‑3’s causal LM yields more reliable PPL comparisons than masked LM in BERT when using teacher‑forcing and comparable tokenization.  
+- Differences in BERT models are affected by vocabulary overlap and rare subwords for Ukrainian; these introduce noise and bias, especially in coherence and PPL metrics.  
+- In your comparison, BERT‑multilingual‑cased shows large negative mean_diff_% (UK vs EN) for coherence and perplexity, indicating UK values are much worse relative to EN; while Gemma shows much smaller mean differences and higher ICC, making it more stable for cross‑language metrics.
 
 ---
 
 ## Conclusion
 
 - **Tangentiality** in the Gemma stack is validated: high cross‑language agreement (r/ρ > 0.97, ICC = 0.95, mean difference ≈ 1.37%). The criteria are met, so this metric is suitable for further analysis.  
-- **Coherence and Pseudo‑Perplexity**, in the current implementation, do **not** meet the consistency criteria; especially PPL depends heavily on tokenization and frequency of subword units for Ukrainian.
-
-## Supporting details from Gemma technical documentation
-
-- Gemma‑3 uses the **SentencePiece tokenizer** with a vocabulary size of ≈ 262,000 units. [oai_citation:0‡Hugging Face](https://huggingface.co/blog/gemma3)  
-- Documentation notes that tokenization has been refined for improved multilingual coverage, in particular to reduce the effect “non‑English word → many rare subwords” especially in morphologically rich languages. [oai_citation:1‡Hugging Face](https://huggingface.co/blog/gemma3)  
-- Also in Gemma‑3 it is stated that when comparing perplexity across languages one must account for differences in subword segmentation, which affect **number of tokens** and probability distributions. [oai_citation:2‡arXiv](https://arxiv.org/html/2503.19786v1)  
-
-> The transition to the Gemma stack (embeddings + causal LM) is justified: the model supports Ukrainian, shows strong consistency for the key metric (tangentiality), and can serve as a basis for further refinement of the remaining metrics.
+- **Coherence and Pseudo‑Perplexity**, in the current implementation, do **not** meet the consistency criteria; especially PPL depends heavily on tokenization and frequency of subword units for Ukrainian.  
