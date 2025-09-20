@@ -44,7 +44,7 @@ The main model evaluated is **YShynkarov/ukr-roberta-cosmus-sentiment**, a fine-
 
 ## POS Tagging Evaluation for Ukrainian (spaCy-uk vs. UD Gold)
 
-## Introduction
+### Introduction
 
 As part of the AIREST project, we conducted an evaluation of part-of-speech (POS) tagging accuracy for the Ukrainian language.  
 The goal was to ensure that the **spaCy-uk** model used in OpenWillis achieves expert-level accuracy, comparable to manually annotated gold-standard data, and does not fall behind alternative solutions by more than the acceptable threshold.  
@@ -200,3 +200,81 @@ Overall ICC(2,1) across all raters: **0.656** (moderate).
     - Text counters are consistent with each other (spaCy-uk ↔ Pyphen).
 - Text ↔ audio diverges significantly (MAE ≈ 9–10; overall ICC ≈ 0.66) due to partial mismatch between transcripts and audio in the corpus — a common situation for auto-generated subtitles/snippets. On subsets where “text ≈ audio,” the divergence is small (by manual check).
 - For clinical timing (SPM, articulation rate), it is correct to rely on the audio gold standard (Praat v3) and use its phonation time. The described methodology is widely used precisely without a transcript.
+
+
+# Section E — Validation of Tangentiality, Perplexity, and Coherence (Ukrainian)
+
+---
+
+## Dataset
+
+- **DAIC‑WOZ Depression Database** — 189 clinical interview sessions, collected via the Wizard‑of‑Oz paradigm (virtual interviewer “Ellie”). [oai_citation:0‡DAIC‑WOZ](https://dcapswoz.ict.usc.edu/wp-content/uploads/2022/02/DAICWOZDepression_Documentation.pdf)  
+- Sessions are split into **train/dev/test**: 107 / 35 / 47 respectively. [oai_citation:1‡Research on DAIC‑WOZ](https://braininformatics.springeropen.com/articles/10.1186/s40708-023-00185-9)  
+- Each participant has a PHQ‑8 assessment (total score from 0 to 24); PHQ‑8 ≥ 10 is used as the binary marker of depression. [oai_citation:2‡Research on DAIC‑WOZ](https://braininformatics.springeropen.com/articles/10.1186/s40708-023-00185-9)  
+- Audio recordings (16 kHz), text transcripts, acoustic and visual features (OpenFace / COVAREP, etc.). [oai_citation:3‡DAIC‑WOZ](https://dcapswoz.ict.usc.edu/wp-content/uploads/2022/02/DAICWOZDepression_Documentation.pdf)  
+
+- **Usage in our project:**  
+  The English transcripts have been translated into Ukrainian using the **Yehor/kulyk‑en‑uk** model. [oai_citation:4‡Hugging Face](https://huggingface.co/posts/Yehor/884755060089981)  
+
+---
+
+## Methods
+
+- **Embeddings (Gemma):**
+  - For both English and Ukrainian we use `google/embeddinggemma-300m` (L2 normalization, cosine similarity).
+  - Chosen because of its broad tokenizer coverage, including Ukrainian.
+
+- **Tangentiality:**
+  - $1 - \cos(\text{utterance}, \text{topic})$, where “topic” = session‑level centroid.
+  - Implemented using EmbeddingGemma.
+
+- **Coherence:**
+  - $\cos(\text{utterance}_i,\; \text{utterance}_{i-1})$, $i>0$ (adjacent turns).
+  - Also with EmbeddingGemma.
+
+- **Pseudo‑Perplexity:**
+  - Causal LM (teacher‑forcing) — `google/gemma‑3‑270m`.
+  - Context windows: 256, 2, 5, 7 (principal measure PPL‑256).
+
+---
+
+## Evaluation Protocol
+
+- **Turn‑level:** Pearson $r$, Spearman $\rho$, MAE, RMSE (EN vs UK).
+- **Session‑level** (mean, variance): ICC(2,1), paired tests, mean difference %.
+- **Success criteria:** $r/\rho \ge 0.7$; ICC $\ge 0.8$; mean difference ≤ ±5%.
+
+---
+
+## Results (Turn‑level)
+
+| Metric             | Pearson r | Spearman ρ | MAE       | RMSE        |
+|--------------------|----------:|-----------:|----------:|-------------:|
+| Tangentiality      | **0.9739** | **0.9723** | **0.0127** | **0.0155**   |
+| Coherence          | 0.2423     | 0.2030     | 0.0210    | 0.0212       |
+| Pseudo‑Perplexity  | 0.0601     | 0.2630     | 90,596,920.0 | 193,752,500.0 |
+
+---
+
+## Results (Session‑level)
+
+| Metric             | Summary | ICC(2,1) | Mean diff %      | p‑value (paired t) |
+|---------------------|:-------:|---------:|------------------:|---------------------:|
+| Tangentiality       | mean    | **0.9534** | **−1.369%**       | 1.12e−34            |
+| Coherence           | mean    | 0.0056     | −2.220%           | 5.63e−236           |
+| Pseudo‑Perplexity   | mean    | 0.0587     | **+398.24%**      | 1.73e−01            |
+
+---
+
+## Conclusion
+
+- **Tangentiality** in the Gemma stack is validated: high cross‑language agreement (r/ρ > 0.97, ICC = 0.95, mean difference ≈ 1.37%). The criteria are met, so this metric is suitable for further analysis.  
+- **Coherence and Pseudo‑Perplexity**, in the current implementation, do **not** meet the consistency criteria; especially PPL depends heavily on tokenization and frequency of subword units for Ukrainian.
+
+## Supporting details from Gemma technical documentation
+
+- Gemma‑3 uses the **SentencePiece tokenizer** with a vocabulary size of ≈ 262,000 units. [oai_citation:0‡Hugging Face](https://huggingface.co/blog/gemma3)  
+- Documentation notes that tokenization has been refined for improved multilingual coverage, in particular to reduce the effect “non‑English word → many rare subwords” especially in morphologically rich languages. [oai_citation:1‡Hugging Face](https://huggingface.co/blog/gemma3)  
+- Also in Gemma‑3 it is stated that when comparing perplexity across languages one must account for differences in subword segmentation, which affect **number of tokens** and probability distributions. [oai_citation:2‡arXiv](https://arxiv.org/html/2503.19786v1)  
+
+> The transition to the Gemma stack (embeddings + causal LM) is justified: the model supports Ukrainian, shows strong consistency for the key metric (tangentiality), and can serve as a basis for further refinement of the remaining metrics.
