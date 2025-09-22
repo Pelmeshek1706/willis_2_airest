@@ -78,43 +78,75 @@ FIRST_PERSON_PRONOUNS_T = {'en' : {"I", "me", "my", "mine", "myself"},
 PRESENT = ["VBP", "VBZ"]
 PAST = ["VBD", "VBN"]
 
-from transformers import pipeline
+from transformers import RobertaConfig, RobertaForSequenceClassification, RobertaTokenizer, pipeline
+from huggingface_hub import hf_hub_download
+from safetensors.torch import load_file
 
-class SentimentAnalyzer:
+class UkrSentimentAnalyzer:
     """
-    A class to perform sentiment analysis using VADER.
+    Ukrainian sentiment analysis model based on YShynkarov/ukr-roberta-cosmus-sentiment.
+    Provides polarity_scores() and major_label().
     """
+    map_labels = {
+                'LABEL_0': 'mixed',
+                'LABEL_1': 'negative',
+                'LABEL_2': 'neutral',
+                'LABEL_3': 'positive',
+            }
+    int_label_map = {
+        "negative": -1.0,
+        "neutral": 0.0,
+        "positive": 1.0,
+        "mixed": 0
+    }
 
     def __init__(self):
-        self.model = "cardiffnlp/twitter-xlm-roberta-base-sentiment"
-        self.sentiment = self.__return_sentiment_model()
+        repo_id = "YShynkarov/ukr-roberta-cosmus-sentiment"
+        safetensor = hf_hub_download(repo_id=repo_id,
+                                     filename="ukrroberta_cosmus_sentiment.safetensors")
 
+        config = RobertaConfig.from_pretrained("youscan/ukr-roberta-base", num_labels=4)
+        tokenizer = RobertaTokenizer.from_pretrained("youscan/ukr-roberta-base")
 
-    def __return_sentiment_model(self):
-        model_name = "cardiffnlp/twitter-xlm-roberta-base-sentiment"
-        sentiment = pipeline(
-                        "sentiment-analysis",
-                        model=model_name,
-                        tokenizer=model_name,
-                        top_k=None 
-                    )
-        return sentiment
-        
-    def polarity_scores(self, text):
+        model = RobertaForSequenceClassification(config)
+        state_dict = load_file(safetensor)
+        model.load_state_dict(state_dict)
+        model.eval()
+        self._pipe = pipeline(
+            "text-classification",
+            model=model,
+            tokenizer=tokenizer,
+            device=-1,               
+            return_all_scores=True,
+            truncation=True,
+        )
+
+    def polarity_scores(self, text: str) -> dict:
         """
-        Returns the sentiment scores for the given text.
+        Returns dict:
+          {
+            "negative": float_score,
+            "neutral":  float_score,
+            "positive": float_score,
+            "mixed":    float_score
+          }
         """
-        results = self.sentiment(text)
-        labels_list = results[0]
-        tmp = {entry['label']: entry['score'] for entry in labels_list}
-        compound = abs(tmp.get('positive', 0.0) - tmp.get('negative', 0.0))
-        return {
-                'neg':      tmp.get('negative', 0.0),
-                'neu':      tmp.get('neutral',  0.0),
-                'pos':      tmp.get('positive', 0.0),
-                'compound': compound
-            }
-    
+        # pipeline returns list[list[{"label":..., "score":...}, ...]]
+        results = self._pipe(text)
+        scores = {
+            self.map_labels[item["label"]]: item["score"]
+            for item in results[0]
+        }
+        return scores
+
+    def major_label(self, text: str) -> tuple[str, int]:
+        """
+        Returns (text_label, int_label),
+        where int_label ∈ {-1,0,1,2} for negative, neutral, positive, mixed.
+        """
+        scores = self.polarity_scores(text)
+        best = max(scores, key=scores.get)
+        return best, self.int_label_map[best]
 
 
 def get_mattr(text, lemmatizer, window_size=50):
@@ -554,7 +586,7 @@ def get_sentiment(df_list, text_list, measures, lang='en'):
         _, turn_list, full_text = text_list
         lemmatizer = spacy.load("uk_core_news_sm") if lang in ['ua', 'uk'] else spacy.load('en_core_web_sm') # should be changed to normal model
         
-        sentiment = SentimentIntensityAnalyzer() if lang == 'en' else SentimentAnalyzer()
+        sentiment = SentimentIntensityAnalyzer() if lang == 'en' else UkrSentimentAnalyzer()
         cols = [measures["neg"], measures["neu"], measures["pos"], measures["compound"], measures["speech_mattr_5"], measures["speech_mattr_10"], measures["speech_mattr_25"], measures["speech_mattr_50"], measures["speech_mattr_100"]]
 
         for idx, u in enumerate(turn_list):
