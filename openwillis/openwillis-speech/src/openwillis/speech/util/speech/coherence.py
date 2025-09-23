@@ -2,6 +2,7 @@
 # website:   http://www.bklynhlth.com
 
 # import the required packages
+import gc
 import logging
 import math
 import re
@@ -32,6 +33,7 @@ PPL_MAX_TOKENS = 2048
 EMBEDDING_BATCH_SIZE = 256
 WINDOW_BATCH_SIZE = 512
 MIN_EMBEDDING_BATCH_SIZE = 8
+WORD_STREAM_CHUNK_SIZE = 32
 
 
 def _select_torch_device(explicit: Optional[str] = None) -> torch.device:
@@ -363,41 +365,51 @@ def get_word_coherence(df_list, utterances_speaker, min_coherence_turn_length, l
             logger.info(f"Sentence encoder not available for language {language}; skipping word coherence analysis.")
             return df_list
 
-        # Initialize coherence lists
-        coherence_lists = {
-            'word_coherence': [],
-            'word_coherence_5': [],
-            'word_coherence_10': [],
-            'variability': {k: [] for k in range(2, 11)}
-        }
+        overall_lists = _new_coherence_lists()
 
-        # Process each utterance
+        chunk_rows = []
+
+        def _process_chunk(rows_chunk):
+            if not rows_chunk:
+                return
+
+            chunk_lists = _new_coherence_lists()
+            for row in rows_chunk:
+                words = row[measures['words_texts']]
+                try:
+                    if len(words) < min_coherence_turn_length:
+                        append_nan_values(chunk_lists, len(words))
+                        continue
+
+                    coherence, coherence_5, coherence_10, variability = get_word_coherence_utterance(row, sentence_encoder, measures)
+
+                    chunk_lists['word_coherence'] += coherence
+                    chunk_lists['word_coherence_5'] += coherence_5
+                    chunk_lists['word_coherence_10'] += coherence_10
+                    for k in range(2, 11):
+                        chunk_lists['variability'][k] += variability[k]
+
+                except Exception as exc:
+                    logger.info(f"Error in word coherence analysis for row: {exc}")
+                    append_nan_values(chunk_lists, len(words))
+
+            _extend_coherence_lists(overall_lists, chunk_lists)
+            _release_accelerator_cache()
+
         for _, row in utterances_speaker.iterrows():
-            try:
-                if len(row[measures['words_texts']]) < min_coherence_turn_length:
-                    coherence_lists = append_nan_values(coherence_lists, len(row[measures['words_texts']]))
-                    continue
+            chunk_rows.append(row)
+            if len(chunk_rows) >= WORD_STREAM_CHUNK_SIZE:
+                _process_chunk(chunk_rows)
+                chunk_rows = []
 
-                # Get word coherence for the utterance
-                coherence, coherence_5, coherence_10, variability = get_word_coherence_utterance(row, sentence_encoder, measures)
-
-                # Append results to lists
-                coherence_lists['word_coherence'] += coherence
-                coherence_lists['word_coherence_5'] += coherence_5
-                coherence_lists['word_coherence_10'] += coherence_10
-                for k in range(2, 11):
-                    coherence_lists['variability'][k] += variability[k]
-
-            except Exception as e:
-                logger.info(f"Error in word coherence analysis for row: {e}")
-                coherence_lists = append_nan_values(coherence_lists, len(row[measures['words_texts']]))
+        _process_chunk(chunk_rows)
 
         # Update word_df with calculated coherence values
-        word_df[measures['word_coherence']] = coherence_lists['word_coherence']
-        word_df[measures['word_coherence_5']] = coherence_lists['word_coherence_5']
-        word_df[measures['word_coherence_10']] = coherence_lists['word_coherence_10']
+        word_df[measures['word_coherence']] = overall_lists['word_coherence']
+        word_df[measures['word_coherence_5']] = overall_lists['word_coherence_5']
+        word_df[measures['word_coherence_10']] = overall_lists['word_coherence_10']
         for k in range(2, 11):
-            word_df[measures[f'word_coherence_variability_{k}']] = coherence_lists['variability'][k]
+            word_df[measures[f'word_coherence_variability_{k}']] = overall_lists['variability'][k]
 
         # Update the summary-level dataframe
         summ_df = get_word_coherence_summary(word_df, summ_df, measures)
@@ -864,3 +876,29 @@ def _encode_in_chunks(
         return np.zeros((0, encoder.get_sentence_embedding_dimension()), dtype=np.float32)
 
     return np.vstack(outputs)
+def _release_accelerator_cache() -> None:
+    gc.collect()
+    if torch.backends.mps.is_available():  # type: ignore[attr-defined]
+        try:
+            torch.mps.empty_cache()  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
+
+def _new_coherence_lists() -> Dict[str, object]:
+    return {
+        "word_coherence": [],
+        "word_coherence_5": [],
+        "word_coherence_10": [],
+        "variability": {k: [] for k in range(2, 11)},
+    }
+
+
+def _extend_coherence_lists(target: Dict[str, object], source: Dict[str, object]) -> None:
+    target["word_coherence"].extend(source["word_coherence"])
+    target["word_coherence_5"].extend(source["word_coherence_5"])
+    target["word_coherence_10"].extend(source["word_coherence_10"])
+    target_var = target["variability"]
+    source_var = source["variability"]
+    for k in range(2, 11):
+        target_var[k].extend(source_var[k])
