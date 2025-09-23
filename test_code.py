@@ -1981,6 +1981,7 @@ import json
 import traceback
 from pathlib import Path
 from tqdm import tqdm
+from datetime import datetime
 # ------------------------------------------------------------------
 # 1️⃣ Подготовка окружения (если ещё не сделано)
 # ------------------------------------------------------------------
@@ -1995,9 +1996,11 @@ import openwillis.speech as ows
 # ------------------------------------------------------------------
 # 3️⃣ Путь к входным и выходным каталогам
 # ------------------------------------------------------------------
-INPUT_DIR   = Path('/Users/pelmeshek1706/Desktop/projects/airest_notebooks/woz_end_whisper_test')
-OUTPUT_DIR  = Path('/Users/pelmeshek1706/Desktop/projects/airest_notebooks/result_oppenwillis_eng_norm')
+INPUT_DIR   = Path('/Users/pelmeshek1706/Desktop/projects/airest_notebooks/woz_end_whisper_test_ukr')
+OUTPUT_DIR  = Path('/Users/pelmeshek1706/Desktop/projects/airest_notebooks/result_oppenwillis_ukr_norm_gemma')
 
+nums = ['635', '609', '386', '392', '423', '345', '351', '437', '379', '378', '350', '436', '422', '344', '393', '387', '608', '634', '620', '636', '622', '391', '385', '434', '352', '346', '420', '408', '409', '347', '421', '435', '353', '384', '390', '623', '637', '633', '627', '380', '419', '357', '431', '425', '343', '424', '356', '430', '418', '381', '395', '626', '632', '618', '624', '383', '397', '368', '340', '426', '432', '354', '433', '355', '341', '427', '369', '396', '382', '631', '625', '619', '695', '656', '483', '326', '440', '454', '332', '468', '469', '455', '333', '327', '441', '482', '657', '680', '709', '696', '682', '655', '641', '669', '480', '331', '457', '443', '325', '319', '318', '442', '324', '330', '456', '481', '640', '654', '683', '697', '708', '718', '693', '687', '650', '491', '485', '308', '452', '334', '320', '446', '321', '447', '453', '335', '309', '484', '490', '651', '679', '692', '684', '653', '486', '492', '479', '445', '323', '337', '451', '336', '444', '322', '478', '487', '652', '691', '717', '703', '688', '663', '677', '307', '461', '475', '313', '449', '448', '474', '312', '306', '676', '662', '689', '702', '716', '660', '489', '310', '476', '462', '304', '338', '339', '463', '305', '311', '477', '488', '649', '661', '715', '705', '659', '329', '473', '315', '301', '467', '300', '466', '472', '314', '328', '664', '670', '658', '710', '712', '699', '666', '458', '464', '302', '316', '470', '317', '471', '465', '303', '459', '673', '667', '698', '707', '713', '600', '628', '402', '364', '370', '416', '358', '359', '371', '417', '403', '365', '629', '615', '601', '617', '603', '415', '373', '367', '401', '429', '428', '366', '400', '414', '372', '399', '602', '612', '606', '389', '438', '376', '410', '404', '362', '405', '363', '377', '411', '439', '388', '607', '605', '349', '361', '407', '413', '375', '412', '374', '360', '406', '348', '604', '638']
+# skip = ['380', '640', '362', '323', '374', '636', '661', '417', '315'] # '380'
 # Создаём выходной каталог, если он ещё не существует
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # ------------------------------------------------------------------
@@ -2008,8 +2011,11 @@ for json_file in tqdm(INPUT_DIR.glob('*.json')):
     name = json_file.stem
 
     print(f'Обрабатываю {json_file} → {name}')
-    # if str(name) in nums:
-    #     print(f'Пропускаю {name}')
+    if str(name) in nums:
+        print(f'Пропускаю {name}')
+        continue
+    # if str(name) in skip:
+    #     print(f'Skipping {name}')
     #     continue
      # ------------------------------------------------------------------
     try:
@@ -2021,16 +2027,19 @@ for json_file in tqdm(INPUT_DIR.glob('*.json')):
         words, turns, summary_sc = ows.speech_characteristics(
             json_conf=transcript_json,
             option='coherence',
-            language='en',
+            language='ua',
             speaker_label='SPEAKER_A'
         )
 
+    except RuntimeError as rexc:
+        # skip.append(str(name))
+        print(f'❌ Пропускаю {json_file} из-за ошибки RuntimeError:')
     except Exception as exc:
         # Если возникла ошибка – выводим трассировку и пропускаем файл
         print(f'❌ Ошибка при обработке {json_file}:')
         traceback.print_exc()
         continue
-
+    
     # ------------------------------------------------------------------
     # 5️⃣ Сохраняем результаты в CSV‑файлы
     # ------------------------------------------------------------------
@@ -2038,8 +2047,8 @@ for json_file in tqdm(INPUT_DIR.glob('*.json')):
         words.to_csv(OUTPUT_DIR / f'words_{name}.csv', index=False)
         turns.to_csv(OUTPUT_DIR / f'turns_{name}.csv', index=False)
         summary_sc.to_csv(OUTPUT_DIR / f'summary_sc_{name}.csv', index=False)
+        print(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ✅ Сохранено: words_{name}.csv, turns_{name}.csv, summary_sc_{name}.csv')
 
-        print(f'✅ Сохранено: words_{name}.csv, turns_{name}.csv, summary_sc_{name}.csv')
     except Exception as exc:
         print(f'❌ Ошибка при сохранении CSV для {name}:')
         traceback.print_exc()
@@ -2057,3 +2066,4 @@ print('=== Завершено ===')
 # print("kernel is ...")
 # import sys
 # print(sys.executable)
+# /Users/pelmeshek1706/Desktop/projects/final_airest_voice/airest/.venv/bin/python
