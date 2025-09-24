@@ -315,9 +315,8 @@ Demonstrate that adapted OpenWillis features, after Ukrainian translation and fe
 
 ## Methods
 
-- **Two prediction tasks:**
-  - *Regression*: PHQ-8 and PCL-C total scores (linear/ridge/tree-based).
-  - *Classification*: Depression (PHQ-8 ≥10) and PTSD (PCL-C ≥50) — logistic/SVM/XGBoost/DecisionTree.
+- **Main prediction task:**
+  - *Classification*: Depression (PHQ-8 ≥10) and PTSD (PCL-C ≥50) — XGBoost/DecisionTree/RandomForest.
 - **Features:**  
   Lexical (MATTR, wordfreq, affect, etc.), discourse (tangentiality, coherence, perplexity), prosodic (pauses, speech rate), sentiment, and summary stats (mean/var per session).
 - **Session-level aggregation**: mean + variance of each feature over all turns.
@@ -343,11 +342,10 @@ Demonstrate that adapted OpenWillis features, after Ukrainian translation and fe
 
 | Model         | Accuracy | F1_macro | Balanced Acc | ROC AUC | PR AUC | Brier |
 |---------------|----------|----------|--------------|---------|--------|-------|
-| DecisionTree  |   ...    |   ...    |     ...      |   ...   |   ...  |  ...  |
-| RandomForest  |   ...    |   ...    |     ...      |   ...   |   ...  |  ...  |
-| XGBoost       |   ...    |   ...    |     ...      |   ...   |   ...  |  ...  |
+| DecisionTree  | 0.7679   | 0.6444   | 0.6342       | 0.6342  | 0.4594 | 0.2321 |
+| RandomForest  | 0.7143   | 0.4704   | 0.5294       | 0.5498  | 0.4046 | 0.2186 |
+| XGBoost       | 0.6607   | 0.5108   | 0.5241       | 0.4857  | 0.3667 | 0.2624 |
 
-*(Fill this table with your BERT results)*
 
 ### 3. **Gemma-based models (Ukrainian)**
 
