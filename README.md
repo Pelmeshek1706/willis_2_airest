@@ -330,6 +330,8 @@ Demonstrate that adapted OpenWillis features, after Ukrainian translation and fe
 
 ## Results
 
+Main idea - classify Depression label
+
 ### 1. **Gemma-based models (English)**
 
 | Model         | Accuracy | F1_macro | Balanced Acc | ROC AUC | PR AUC | Brier |
@@ -337,6 +339,10 @@ Demonstrate that adapted OpenWillis features, after Ukrainian translation and fe
 | DecisionTree  | 0.5536   | 0.4630   | 0.4638       | 0.4638  | 0.2910 | 0.4464|
 | RandomForest  | 0.6964   | 0.4612   | 0.5166       | 0.4555  | 0.3530 | 0.2365|
 | XGBoost       | 0.6250   | 0.4876   | 0.4985       | 0.5143  | 0.3305 | 0.2823|
+
+#### 1.1 The impact of features on the model
+<img width="789" height="490" alt="image" src="https://github.com/user-attachments/assets/b0450c99-ee06-4c5d-8311-13b45778541d" />
+<img width="790" height="490" alt="image" src="https://github.com/user-attachments/assets/cbebce63-611c-4467-beb7-4f3e2ff481d0" />
 
 ### 2. **BERT-based models (English)**
 
@@ -346,6 +352,10 @@ Demonstrate that adapted OpenWillis features, after Ukrainian translation and fe
 | RandomForest  | 0.7143   | 0.4704   | 0.5294       | 0.5498  | 0.4046 | 0.2186 |
 | XGBoost       | 0.6607   | 0.5108   | 0.5241       | 0.4857  | 0.3667 | 0.2624 |
 
+#### 2.1 The impact of features on the model
+<img width="790" height="490" alt="image" src="https://github.com/user-attachments/assets/eb3273ca-1d02-4268-8273-3073bf000df6" />
+<img width="790" height="490" alt="image" src="https://github.com/user-attachments/assets/705f112f-ab7f-4ad8-847a-d0ab9fb7df7d" />
+
 
 ### 3. **Gemma-based models (Ukrainian)**
 
@@ -354,6 +364,10 @@ Demonstrate that adapted OpenWillis features, after Ukrainian translation and fe
 | DecisionTree  | 0.6250   | 0.4593   | 0.4819       | 0.4819  | 0.2973 | 0.3750|
 | RandomForest  | 0.6607   | 0.4432   | 0.4910       | 0.5407  | 0.3748 | 0.2283|
 | XGBoost       | 0.6607   | 0.5763   | 0.5739       | 0.5701  | 0.4212 | 0.2593|
+
+#### 3.1 The impact of features on the model
+<img width="789" height="490" alt="image" src="https://github.com/user-attachments/assets/03022158-7969-4460-899d-ee74381c5feb" />
+<img width="790" height="490" alt="image" src="https://github.com/user-attachments/assets/335520ce-566c-44ac-b998-4145533b7df2" />
 
 ### 4. **BERT-based models (Ukrainian)**
 
