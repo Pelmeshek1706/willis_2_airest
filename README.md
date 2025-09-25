@@ -332,27 +332,7 @@ DAIC‑WOZ documentation, USC/ICT portal, and the DAIC‑WOZ EULA. ([dcapswoz.ic
 
 ---
 
-## Results (Turn‑level)
-
-| Metric             | Pearson r | Spearman ρ | MAE         | RMSE           |
-|--------------------|----------:|-----------:|-------------:|----------------:|
-| Tangentiality      | **0.9739** | **0.9723** | **0.0127**   | **0.0155**      |
-| Coherence          | 0.2423     | 0.2030     | 0.0210       | 0.0212          |
-| Pseudo‑Perplexity  | 0.0601     | 0.2630     | 90,596,920.0 | 193,752,500.0   |
-
----
-
-## Results (Session‑level)
-
-| Metric             | Summary | ICC(2,1)     | Mean diff %      | p‑value (paired t) |
-|---------------------|:-------:|-------------:|------------------:|--------------------:|
-| Tangentiality       | mean    | **0.9534**   | **−1.369%**        | 1.12e−34            |
-| Coherence           | mean    | 0.0056       | −2.220%            | 5.63e−236           |
-| Pseudo‑Perplexity   | mean    | 0.0587       | **+398.24%**       | 1.73e−01            |
-
----
-
-## Additional Comparison: 
+## Results
 
 ### BERT‑Base‑Cased(for english) vs BERT‑Multilingual‑Cased (for ukrainian)
 
