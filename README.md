@@ -15,6 +15,34 @@ Within the AIREST project, the sentiment analysis capabilities of NLP algorithms
 - Single available split: `train` on the entire dataset .
 - Primary languages: Ukrainian and Russian .
 
+## Additional info
+
+**Overview.**  
+Community dataset on Hugging Face for sentiment analysis over Telegram messages in Ukrainian/Russian; packaged for text classification tasks. ([huggingface.co](https://huggingface.co/datasets/YShynkarov/COSMUS))
+
+**Collection & consent.**  
+The public dataset card does *not* provide a detailed collection protocol or consent description beyond task framing; treat content as user‑generated social media text. (No additional collection/consent details are stated on the card.) ([huggingface.co](https://huggingface.co/datasets/YShynkarov/COSMUS))
+
+**Licensing & access.**  
+Released under the **MIT License** according to the dataset card. Reuse is broadly permitted under MIT; downstream users remain responsible for compliance with platform (Telegram) terms and any applicable laws. ([huggingface.co](https://huggingface.co/datasets/YShynkarov/COSMUS))
+
+**Moderation & sensitive content.**  
+The card does not specify an explicit moderation process. As with most social‑media corpora, text may contain offensive or sensitive content; apply standard toxicity/offensive‑content screening in downstream use. (No moderation policy is listed on the card.) ([huggingface.co](https://huggingface.co/datasets/YShynkarov/COSMUS))
+
+**Intended use.**  
+Benchmarks and research on sentiment classification for Ukrainian/Russian social‑media text. ([huggingface.co](https://huggingface.co/datasets/YShynkarov/COSMUS))
+
+**Prohibited/unsafe uses.**  
+Avoid attempts to re‑identify individuals; do not infer protected attributes or make consequential decisions about people solely from model outputs. (General research ethics guidance; the dataset card itself does not enumerate prohibitions.) ([huggingface.co](https://huggingface.co/datasets/YShynkarov/COSMUS))
+
+**Known limitations.**  
+Potential class imbalance; social‑media noise; unknown representativeness; lack of fine‑grained consent metadata; dataset card is sparse on collection details. ([huggingface.co](https://huggingface.co/datasets/YShynkarov/COSMUS))
+
+**How to cite / where to learn more.**  
+Hugging Face dataset page (license/tags/language). ([huggingface.co](https://huggingface.co/datasets/YShynkarov/COSMUS))
+
+---
+
 ## Section 1.1 — Sentiment Analysis
 
 The main model evaluated is **YShynkarov/ukr-roberta-cosmus-sentiment**, a fine-tuned variant of `ukr-roberta` adapted specifically to Ukrainian and Russian texts. Additionally, several other models were tested for comparative evaluation:
@@ -207,6 +235,39 @@ Overall ICC(2,1) across all raters: **0.656** (moderate).
 ---
 
 ## Dataset
+
+## E‑DAIC (Extended Distress Analysis Interview Corpus)
+
+**Overview.**  
+E‑DAIC extends DAIC‑WOZ clinical interviews with linked clinical assessments (e.g., PHQ‑8, PCL‑C). DAIC‑WOZ/E‑DAIC materials are distributed by USC/ICT with documentation describing data contents and interview protocol. ([dcapswoz.ict.usc.edu](https://dcapswoz.ict.usc.edu/wp-content/uploads/2022/02/DAICWOZDepression_Documentation.pdf))
+
+**Collection & consent.**  
+DAIC‑WOZ interviews were collected under human‑subjects research oversight; the official documentation describes recording setup, annotation, and accompanying measures (e.g., PHQ‑8). (The documentation is the canonical reference; access is controlled via USC/ICT.) ([dcapswoz.ict.usc.edu](https://dcapswoz.ict.usc.edu/wp-content/uploads/2022/02/DAICWOZDepression_Documentation.pdf))
+
+**Licensing & access.**  
+Access requires registration/approval via the **official DAIC‑WOZ download portal**; redistribution is restricted. Treat E‑DAIC as **research‑only** data with a data‑use agreement (DUA). ([dcapswoz.ict.usc.edu](https://dcapswoz.ict.usc.edu/wp-content/uploads/2022/02/DAICWOZDepression_Documentation.pdf))  
+Additionally, the Extended DAIC is governed by an End User License Agreement (EULA) that stipulates this database is permitted for **research purpose only**, prohibits commercial use, and disallows redistribution without permission.  [oai_citation:0‡ihp-lab.org](https://www.ihp-lab.org/downloads/Extended-DAIC-BLANK_EULA.pdf)
+
+**Usage restrictions & non‑diagnostic disclaimer.**  
+Use for **research** and **method development** only; **not for clinical diagnosis or individual decision‑making**. Do not attempt to identify participants; no commercial or clinical deployment without separate permission/oversight. (These restrictions are enforced by USC/ICT and outlined in the EULA.)  [oai_citation:1‡ihp-lab.org](https://www.ihp-lab.org/downloads/Extended-DAIC-BLANK_EULA.pdf)
+
+**Clinical risk notes.**  
+Interviews contain sensitive mental‑health content. Models trained or applied to E‑DAIC should be clearly labeled as **non‑diagnostic** and **experimental**; misuse (e.g., in clinical settings) may pose ethical risks. (Standard risk guidance; EULA prohibits clinical use.)  [oai_citation:2‡ihp-lab.org](https://www.ihp-lab.org/downloads/Extended-DAIC-BLANK_EULA.pdf)
+
+**Intended use.**  
+Academic research on affective computing, mental‑health signal processing, benchmarking algorithms in interview settings. ([dcapswoz.ict.usc.edu](https://dcapswoz.ict.usc.edu/wp-content/uploads/2022/02/DAICWOZDepression_Documentation.pdf))
+
+**Prohibited/unsafe uses.**  
+Re‑identification, redistribution outside the DUA, clinical or commercial deployment without authorization, or presenting outputs as medical advice. (Enforced via USC/ICT licensing and EULA.)  [oai_citation:3‡ihp-lab.org](https://www.ihp-lab.org/downloads/Extended-DAIC-BLANK_EULA.pdf)
+
+**Known limitations.**  
+Single‑site study design; relatively modest sample size; scripted-interviewer setting (Ellie) introduces artifacts; interviewer prompts may bias models. Indeed, recent work has shown that models exploiting the interviewer’s prompts may “shortcut” the depression classification task.  [oai_citation:4‡arXiv](https://arxiv.org/abs/2404.14463)  
+Also, some session transcripts are incomplete or missing interviewer speech (excluded sessions) per documentation.  [oai_citation:5‡DAIC-WOZ](https://dcapswoz.ict.usc.edu/wp-content/uploads/2022/02/DAICWOZDepression_Documentation.pdf)
+
+**How to cite / where to learn more.**  
+DAIC‑WOZ documentation, USC/ICT portal, and the DAIC‑WOZ EULA. ([dcapswoz.ict.usc.edu](https://dcapswoz.ict.usc.edu/wp-content/uploads/2022/02/DAICWOZDepression_Documentation.pdf)) 
+---
+
 
 - **DAIC‑WOZ Depression Database** — 189 clinical interview sessions, collected via the Wizard‑of‑Oz paradigm (virtual interviewer “Ellie”). [oai_citation:0‡DAIC‑WOZ](https://dcapswoz.ict.usc.edu/wp-content/uploads/2022/02/DAICWOZDepression_Documentation.pdf)  
 - Sessions are split into **train/dev/test**: 107 / 35 / 47 respectively. [oai_citation:1‡Research on DAIC‑WOZ](https://braininformatics.springeropen.com/articles/10.1186/s40708-023-00185-9)  
