@@ -2,6 +2,31 @@
 
 Within the AIREST project, the sentiment analysis capabilities of NLP algorithms were verified using a corpus of Telegram user messages (COSMUS dataset). The evaluation includes several sentiment analysis models, allowing identification of the most reliable option for further usage.
 
+
+
+## Splits & Reproducibility
+- **Software / library versions**  
+  - spaCy version: **3.8.7**  
+  - Stanza version: **1.10.1**  
+  - Transformers version: **4.56.2**  
+  - Tokenizers version: **0.22.1**  
+  - SentencePiece version: **0.2.0**  
+  - PyTorch version: **2.8.0**  
+  - Device: Tesla T4 GPU (15,360 MiB) for acceleration; fallback to CPU if necessary.
+    
+- **Hardware & memory footprints**  
+  - Training / inference run on GPU (Tesla T4) / CPU fallback  
+  - Report peak GPU memory usage (e.g. ~X GB) and CPU memory usage  
+  - Indicate batch sizes, gradient accumulation, mixed precision (bfloat16 on GPU etc.)  
+  - If using multiple runs, average over seeds (e.g. 3 runs) to mitigate variance  
+
+- **Reproducibility statements**  
+  - Fix random seeds for all components (numpy, torch, transformers, data shuffling) set to 1706.  
+  - Save model checkpoints, hyperparameters, and training logs  
+  - Include scripts for data preprocessing (tokenization, translation, feature extraction)  
+  - Provided a link to exact versioned code (e.g. GitHub commit tag or release)  
+
+
 ## COSMUS Dataset Overview
 
 - **COSMUS** is a sentiment analysis dataset composed of Telegram messages in Ukrainian and Russian languages .
