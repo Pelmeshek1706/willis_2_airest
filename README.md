@@ -352,7 +352,9 @@ DAIC‑WOZ documentation, USC/ICT portal, and the DAIC‑WOZ EULA. ([dcapswoz.ic
 
 ---
 
-## Additional Comparison: BERT‑Base‑Cased(for english) vs BERT‑Multilingual‑Cased (for ukrainian)
+## Additional Comparison: 
+
+### BERT‑Base‑Cased(for english) vs BERT‑Multilingual‑Cased (for ukrainian)
 
 I also compared performance of two other models:
 
@@ -361,6 +363,13 @@ I also compared performance of two other models:
 | coherence     | 275  | 0.335050   | 0.298841     | 0.355406    | 0.355501      | 0.000199     | −41.980173               | 0.000000e+00    | 7.488097e‑47         |
 | perplexity    | 275  | 0.202752   | 0.290302     | 24,699.46107| 37,889.42130  | 0.144741     | −29.216398               | 4.198781e‑19    | 8.970070e‑27         |
 | tangentiality | 275  | 0.761982   | 0.740529     | 0.114286    | 0.116063      | 0.080850     | 54.005750                | 6.440214e‑210   | 7.488097e‑47         |
+
+### Gemma case for English vs Gemma for Ukrainian
+|   | metric       | N   | Pearson_r | Spearman_rho |      MAE      |      RMSE      | ICC2_1   | mean_diff_% (UK_vs_EN) |      t_p       |   wilcoxon_p    |
+|---|-------------|-----|-----------|--------------|---------------|----------------|----------|-----------------------|----------------|-----------------|
+| 0 | coherence   | 275 | 0.189010  | 0.193831     | 0.295724      | 0.295901       | 0.000276 | -37.258958            | 0.000000e+00   | 7.488097e-47    |
+| 1 | perplexity  | 275 | 0.166847  | 0.310692     | 106844.131222 | 168004.421501  | 0.029945 | -76.827925            | 2.761332e-31   | 1.152904e-44    |
+| 2 | tangeniality| 275 | 0.818952  | 0.788431     | 0.020776      | 0.028332       | 0.715477 | -3.113925             | 9.358040e-31   | 9.498690e-30    |
 
 **Why Gemma outperforms these BERT‑based models:**
 
