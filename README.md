@@ -406,8 +406,26 @@ Main idea - classify Depression label
   - Classifiers trained on one language generalize well to the other, confirming feature consistency.
 
 - **BERT-multilingual vs BERT-EN:**  
-  - (Insert your findings here: typically, multilingual BERT features are less stable and may show bigger drops in cross-lingual testing, but provide as a comparison.)
+The performance of BERT-based feature extraction and classification was evaluated in both the English-only setting (BERT-base-cased) and the cross-lingual (Ukrainian) setting (BERT-base-multilingual-cased). The main findings are as follows:
 
+- **In-language performance (EN):**
+  - BERT-base-cased achieves the highest accuracy and F1 on English test data (accuracy = 0.77, F1_macro = 0.64 for DecisionTree), clearly outperforming other models in the English-only condition.
+- **Cross-lingual generalization:**
+  - When the BERT-EN model is applied to Ukrainian (translated) data, its performance drops sharply (accuracy = 0.50, F1_macro = 0.47), indicating limited cross-lingual transfer.
+  - The BERT-multilingual model, trained and tested on Ukrainian data, performs better (accuracy = 0.63, F1_macro = 0.49), but still lags behind the English-only BERT's best results.
+  - When the BERT-multilingual model, trained on Ukrainian, is applied back to English, performance recovers somewhat (accuracy = 0.70, F1_macro = 0.41), but not to the level of English-only BERT.
+- **Comparison with Gemma:**
+  - In contrast to Gemma embeddings, where cross-lingual transfer is strong (EN→UA and UA→EN show only minor drops, or even improvement), BERT-based features show significant performance degradation when crossing languages.
+- **Interpretation:**
+  - The results confirm that **monolingual BERT models are highly effective in-language**, but are not robust to cross-lingual application, especially for morphologically-rich and underrepresented languages like Ukrainian.
+  - **Multilingual BERT** offers better cross-lingual capacity but at the expense of top in-language performance, and still cannot match the cross-lingual stability of the Gemma stack in this use case.
+  - Feature importances also shift considerably between language/model settings, which should be considered when interpreting results in multilingual or translated contexts.
+   
+   **Key Point:**  
+   - The Gemma stack outperforms BERT for cross-lingual stability and transfer in this psychiatric outcome prediction task.  
+   - For monolingual English, BERT-base-cased remains a strong baseline, but for robust Ukrainian/English compatibility, Gemma is preferred.
+
+  
 - **Most effective model (on this sample):**  
   - DecisionTree yielded clearest, interpretable importances; XGBoost and RandomForest did not provide major uplift, likely due to data size.
 
