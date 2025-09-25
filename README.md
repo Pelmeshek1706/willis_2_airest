@@ -373,11 +373,14 @@ Main idea - classify Depression label
 
 | Model         | Accuracy | F1_macro | Balanced Acc | ROC AUC | PR AUC | Brier |
 |---------------|----------|----------|--------------|---------|--------|-------|
-| DecisionTree  |   ...    |   ...    |     ...      |   ...   |   ...  |  ...  |
-| RandomForest  |   ...    |   ...    |     ...      |   ...   |   ...  |  ...  |
-| XGBoost       |   ...    |   ...    |     ...      |   ...   |   ...  |  ...  |
+| DecisionTree  | 0.6250   | 0.4876   | 0.4985       | 0.4985  | 0.3029 | 0.3750|
+| RandomForest  | 0.6964   | 0.4105   | 0.5000       | 0.5241  | 0.4114 | 0.2213|
+| XGBoost       | 0.6607   | 0.5364   | 0.5407       | 0.5777  | 0.4700 | 0.2430|
 
-*(Fill this table with your BERT results)*
+#### 4.1 The impact of features on the model
+<img width="790" height="490" alt="image" src="https://github.com/user-attachments/assets/f98b135e-da7a-4048-808e-37ec04a138e1" />
+<img width="792" height="490" alt="image" src="https://github.com/user-attachments/assets/eecce5a5-c698-41b8-87c4-164fbf7066fd" />
+
 
 ---
 
@@ -387,6 +390,12 @@ Main idea - classify Depression label
 |----------|----------|---------|--------------|-------------|------------|-----------|----------------|--------------|---------|------------|-------------|
 | EN       | EN       | 0.5536  | 0.46298      | 0.46380     | UA         | 0.66071   | 0.60520        | 0.60709      | 163     | 56         | 56          |
 | UA       | UA       | 0.6250  | 0.45931      | 0.48190     | EN         | 0.71429   | 0.51304        | 0.54600      | 163     | 56         | 56          |
+
+### 6. **Cross-validation: Train on EN, test on UA (and vice versa) — Bert stack**
+|   | model_on | own_test | own_acc  | own_f1_macro | own_roc_auc | cross_test | cross_acc | cross_f1_macro | cross_roc_auc | n_train | n_own_test | n_cross_test |
+|---|----------|----------|----------|--------------|-------------|------------|-----------|----------------|---------------|---------|------------|--------------|
+| 0 | EN       | EN       | 0.767857 | 0.644358     | 0.634238    | UA         | 0.500000  | 0.466667       | 0.475113      | 163     | 56         | 56           |
+| 1 | UA       | UA       | 0.625000 | 0.487582     | 0.498492    | EN         | 0.696429  | 0.410526       | 0.500000      | 163     | 56         | 56           |
 
 ---
 
