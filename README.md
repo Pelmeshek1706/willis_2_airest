@@ -133,9 +133,6 @@ Evaluation methodology:
 4. **Metrics**:  
    - UPOS: Macro-averaged F1 score computed across 10 target UPOS classes.  
    - Tense: Macro-F1 score computed among verbs (`VERB`).
-5. **Success criteria**:
-   - spaCy-uk Macro-F1 ≥ target threshold (comparable to the English OpenWillis model).
-   - The difference between spaCy-uk and Stanza-uk Macro-F1 ≤ 2 percentage points; exceeding this threshold indicates potential model misconfiguration rather than unavoidable linguistic ambiguity.
 
 ### Comparative Results Table
 
@@ -336,7 +333,6 @@ DAIC‑WOZ documentation, USC/ICT portal, and the DAIC‑WOZ EULA. ([dcapswoz.ic
 
 - **Turn‑level:** Pearson $r$, Spearman $\rho$, MAE, RMSE (EN vs UK).  
 - **Session‑level** (mean, variance): ICC(2,1), paired tests, mean difference %.  
-- **Success criteria:** $r/\rho \ge 0.7$; ICC $\ge 0.8$; mean difference ≤ ±5%.
 
 ---
 
