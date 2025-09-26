@@ -24,7 +24,13 @@ Within the AIREST project, the sentiment analysis capabilities of NLP algorithms
   - Fix random seeds for all components (numpy, torch, transformers, data shuffling) set to 1706.  
   - Save model checkpoints, hyperparameters, and training logs  
   - Include scripts for data preprocessing (tokenization, translation, feature extraction)  
-  - Provided a link to exact versioned code (e.g. GitHub commit tag or release)  
+  - Provided a link to exact versioned code (e.g. GitHub commit tag or release)
+ 
+- **Dataset splits**
+	- COSMUS : neutral - 4702, negative - 4541, positive - 2373;
+	- DCWOZ : train - 163, dev - 56, test - 56; 
+	- All other datasets were distributed in an 80% train, 20% test format. 
+   
 
 
 ## COSMUS Dataset Overview
