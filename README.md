@@ -482,7 +482,45 @@ Short description of table fields:
 	•	own_auc_lo / own_auc_hi and cross_auc_lo / cross_auc_hi — same idea, but for ROC AUC (95% bootstrap CI bounds).  ￼
 	•	n_train / n_own_test / n_cross_test — counts of samples used to train the model and to evaluate it on own vs cross tests.
 	•	own_icc2_1 / cross_icc2_1 — ICC(2,1) between the two models’ probability outputs on the same subjects: “two-way random effects, absolute agreement, single measurement.” It quantifies how closely the two raters (models) match in value, not just rank. own is computed on the own test set; cross on the cross test set.  ￼
-	•	own_icc_lo / own_icc_hi and cross_icc_lo / cross_icc_hi — 95% CI bounds for those ICC(2,1) estimates (from the ICC routine you’re using).  ￼
+
+# Big picture
+
+- **Gemma stack**
+  - **Own (EN→EN, UA→UA):** weak separation—AUC ≈ 0.46–0.48, macro-F1 ≈ 0.46.
+  - **Cross (EN→UA, UA→EN):** better surface metrics—macro-F1 ≈ 0.51–0.61; AUC ≈ 0.55–0.61, but confidence intervals still brush 0.50.
+  - **Reading:** some cross-lingual robustness, yet ranking evidence remains borderline.
+
+- **BERT stack**
+  - **Own (EN→EN):** clearly strongest cell—acc ≈ 0.77, macro-F1 ≈ 0.64, AUC ≈ 0.63 (CI above 0.5).
+  - **Own (UA→UA) & Cross:** near chance—AUC ≈ 0.47–0.50; macro-F1 ≈ 0.41–0.49.
+  - **Reading:** features are English-centric; transfer to UA (and UA in-domain) is weak.
+
+---
+
+# Why this pattern
+
+- **Domain/language shift.**  
+  Representations learned on English do not carry over cleanly to Ukrainian (lexicon, morphology, syntax, discourse markers). BERT appears tightly coupled to EN distributions; Gemma likely encodes higher-level semantics that degrade more gracefully, hence “cross > own” in some cells but still with modest separation.
+
+- **Calibration and near-constant scores.**  
+  Off-domain, some models emit poorly calibrated or low-variance probabilities. This depresses ROC-AUC (ranking signal), while accuracy/F1 can remain deceptively high if the fixed threshold happens to align with class prevalence on the target split.
+
+- **Threshold vs ranking.**  
+  Higher cross accuracy/F1 alongside AUC ≈ 0.55± suggests threshold effects rather than genuine class separation. A single global cutoff (e.g., 0.5) can look better on one domain and worse on another without improving the underlying ranking.
+
+- **Small evaluation sets.**  
+  With n≈56 per test, CIs are wide and often straddle 0.5; many apparent differences are not statistically decisive.
+
+- **Label orientation sanity check.**  
+  Any persistent AUC < 0.5 should trigger a check that the positive class and probability column are aligned as intended.
+
+---
+
+# Takeaways to report
+
+- **Strongest in-domain:** BERT trained and tested on EN.  
+- **Cross-lingual generalization:** overall weak; Gemma shows partial robustness (macro-F1 up to ~0.61) but AUC evidence is borderline.  
+- **Most plausible drivers:** domain shift + probability miscalibration + threshold effects under small n.
 
 ---
 
