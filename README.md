@@ -409,11 +409,12 @@ Main idea - classify Depression label
 
 ### 1. **Gemma-based models (English)**
 
-| Model         | Accuracy | F1_macro | Balanced Acc | ROC AUC | PR AUC | Brier |
-|---------------|----------|----------|--------------|---------|--------|-------|
-| DecisionTree  | 0.5536   | 0.4630   | 0.4638       | 0.4638  | 0.2910 | 0.4464|
-| RandomForest  | 0.6964   | 0.4612   | 0.5166       | 0.4555  | 0.3530 | 0.2365|
-| XGBoost       | 0.6250   | 0.4876   | 0.4985       | 0.5143  | 0.3305 | 0.2823|
+|   | model               | accuracy | f1_macro | f1_lo   | f1_hi   | balanced_acc | roc_auc | auc_lo   | auc_hi   | pr_auc   | brier   | icc2_1    | icc_lo | icc_hi |
+|---|---------------------|----------|----------|---------|---------|--------------|---------|----------|----------|----------|---------|-----------|--------|--------|
+| 0 | DecisionTree        | 0.607143 | 0.535445 | 0.408122| 0.672515| 0.535445     | 0.554299| 0.405732 | 0.704468 | 0.364249 | 0.342460| NaN       | NaN    | NaN    |
+| 1 | RandomForest        | 0.714286 | 0.599284 | 0.459169| 0.731590| 0.595777     | 0.536953| 0.363462 | 0.707391 | 0.422019 | 0.221525| -0.038208 | -0.29  | 0.22   |
+| 2 | XGBoost             | 0.553571 | 0.462984 | 0.345029| 0.590244| 0.463801     | 0.512821| 0.342383 | 0.683258 | 0.348045 | 0.292368| 0.139535  | -0.13  | 0.39   |
+| 3 | DecisionTree vs XGBoost | 0.607143 | 0.535445 | 0.397849| 0.665472| 0.535445     | 0.554299| 0.405713 | 0.699095 | 0.364249 | 0.342460| -0.026977 | -0.29  | 0.24   |
 
 #### 1.1 The impact of features on the model
 <img width="789" height="490" alt="image" src="https://github.com/user-attachments/assets/b0450c99-ee06-4c5d-8311-13b45778541d" />
@@ -421,11 +422,12 @@ Main idea - classify Depression label
 
 ### 2. **BERT-based models (English)**
 
-| Model         | Accuracy | F1_macro | Balanced Acc | ROC AUC | PR AUC | Brier |
-|---------------|----------|----------|--------------|---------|--------|-------|
-| DecisionTree  | 0.7679   | 0.6444   | 0.6342       | 0.6342  | 0.4594 | 0.2321 |
-| RandomForest  | 0.7143   | 0.4704   | 0.5294       | 0.5498  | 0.4046 | 0.2186 |
-| XGBoost       | 0.6607   | 0.5108   | 0.5241       | 0.4857  | 0.3667 | 0.2624 |
+|   | model               | accuracy | f1_macro | f1_lo   | f1_hi   | balanced_acc | roc_auc | auc_lo   | auc_hi   | pr_auc   | brier   | icc2_1    | icc_lo | icc_hi |
+|---|---------------------|----------|----------|---------|---------|--------------|---------|----------|----------|----------|---------|-----------|--------|--------|
+| 0 | DecisionTree        | 0.767857 | 0.644358 | 0.470449| 0.780392| 0.634238     | 0.634238| 0.533183 | 0.751885 | 0.459384 | 0.232143| NaN       | NaN    | NaN    |
+| 1 | RandomForest        | 0.732143 | 0.589643 | 0.443223| 0.717152| 0.592006     | 0.556561| 0.383107 | 0.739103 | 0.487250 | 0.213427| 0.142344  | -0.13  | 0.39   |
+| 2 | XGBoost             | 0.589286 | 0.464894 | 0.343686| 0.599284| 0.472851     | 0.487179| 0.306184 | 0.666667 | 0.338272 | 0.271813| 0.116822  | -0.15  | 0.37   |
+| 3 | DecisionTree vs XGBoost | 0.767857 | 0.644358 | 0.490909| 0.780648| 0.634238     | 0.634238| 0.533183 | 0.752206 | 0.459384 | 0.232143| 0.058919  | -0.21  | 0.32   |
 
 #### 2.1 The impact of features on the model
 <img width="790" height="490" alt="image" src="https://github.com/user-attachments/assets/eb3273ca-1d02-4268-8273-3073bf000df6" />
@@ -434,11 +436,12 @@ Main idea - classify Depression label
 
 ### 3. **Gemma-based models (Ukrainian)**
 
-| Model         | Accuracy | F1_macro | Balanced Acc | ROC AUC | PR AUC | Brier |
-|---------------|----------|----------|--------------|---------|--------|-------|
-| DecisionTree  | 0.6250   | 0.4593   | 0.4819       | 0.4819  | 0.2973 | 0.3750|
-| RandomForest  | 0.6607   | 0.4432   | 0.4910       | 0.5407  | 0.3748 | 0.2283|
-| XGBoost       | 0.6607   | 0.5763   | 0.5739       | 0.5701  | 0.4212 | 0.2593|
+|   | model               | accuracy | f1_macro | f1_lo   | f1_hi   | balanced_acc | roc_auc | auc_lo   | auc_hi   | pr_auc   | brier   | icc2_1    | icc_lo | icc_hi |
+|---|---------------------|----------|----------|---------|---------|--------------|---------|----------|----------|----------|---------|-----------|--------|--------|
+| 0 | DecisionTree        | 0.607143 | 0.449016 | 0.348837| 0.575758| 0.469080     | 0.469080| 0.371795 | 0.572398 | 0.294328 | 0.378871| NaN       | NaN    | NaN    |
+| 1 | RandomForest        | 0.607143 | 0.535445 | 0.408018| 0.672515| 0.535445     | 0.527903| 0.349925 | 0.698341 | 0.352985 | 0.238426| 0.268401  | 0.02   | 0.49   |
+| 2 | XGBoost             | 0.607143 | 0.549708 | 0.414775| 0.677791| 0.552036     | 0.559578| 0.389140 | 0.736048 | 0.458362 | 0.269515| -0.079553 | -0.33  | 0.18   |
+| 3 | DecisionTree vs XGBoost | 0.607143 | 0.449016 | 0.348837| 0.562299| 0.469080     | 0.469080| 0.371795 | 0.570155 | 0.294328 | 0.378871| 0.093806  | -0.15  | 0.33   |
 
 #### 3.1 The impact of features on the model
 <img width="789" height="490" alt="image" src="https://github.com/user-attachments/assets/03022158-7969-4460-899d-ee74381c5feb" />
@@ -446,11 +449,12 @@ Main idea - classify Depression label
 
 ### 4. **BERT-based models (Ukrainian)**
 
-| Model         | Accuracy | F1_macro | Balanced Acc | ROC AUC | PR AUC | Brier |
-|---------------|----------|----------|--------------|---------|--------|-------|
-| DecisionTree  | 0.6250   | 0.4876   | 0.4985       | 0.4985  | 0.3029 | 0.3750|
-| RandomForest  | 0.6964   | 0.4105   | 0.5000       | 0.5241  | 0.4114 | 0.2213|
-| XGBoost       | 0.6607   | 0.5364   | 0.5407       | 0.5777  | 0.4700 | 0.2430|
+|   | model               | accuracy | f1_macro | f1_lo   | f1_hi   | balanced_acc | roc_auc | auc_lo   | auc_hi   | pr_auc   | brier   | icc2_1    | icc_lo | icc_hi |
+|---|---------------------|----------|----------|---------|---------|--------------|---------|----------|----------|----------|---------|-----------|--------|--------|
+| 0 | DecisionTree        | 0.642857 | 0.499106 | 0.371832| 0.633987| 0.511312     | 0.513575| 0.410256 | 0.625189 | 0.316176 | 0.353374| NaN       | NaN    | NaN    |
+| 1 | RandomForest        | 0.714286 | 0.513043 | 0.397849| 0.644358| 0.546003     | 0.487179| 0.307692 | 0.654600 | 0.409134 | 0.213518| 0.166296  | -0.09  | 0.41   |
+| 2 | XGBoost             | 0.660714 | 0.557956 | 0.418363| 0.693750| 0.557315     | 0.592760| 0.428356 | 0.752640 | 0.455857 | 0.240445| -0.051985 | -0.29  | 0.20   |
+| 3 | DecisionTree vs XGBoost | 0.642857 | 0.499106 | 0.371832| 0.633987| 0.511312     | 0.513575| 0.414027 | 0.621418 | 0.316176 | 0.353374| 0.076698  | -0.17  | 0.32   |
 
 #### 4.1 The impact of features on the model
 <img width="790" height="490" alt="image" src="https://github.com/user-attachments/assets/f98b135e-da7a-4048-808e-37ec04a138e1" />
@@ -474,14 +478,14 @@ Main idea - classify Depression label
 | 1 | UA       | UA       | 0.625000 | 0.487582     | 0.498492    | 0.37500   | 0.580061  | 0.413622   | 0.580826   | EN         | 0.696429  | 0.410526       | 0.500000      | 0.388889    | 0.430769    | 0.500000     | 0.500000     | 163     | 56         | 56           |
 
 Short description of table fields:
-	•	model_on / own_test / cross_test — which dataset/language the model was trained on (model_on) and where it’s evaluated: the own (in-domain) test vs the cross (out-of-domain) test.
-	•	own_acc / cross_acc — accuracy: share of samples classified correctly on that test split.  ￼
-	•	own_f1_macro / cross_f1_macro — macro-F1: unweighted mean of per-class F1 scores (treats each class equally). F1 itself is the harmonic mean of precision and recall.  ￼
-	•	own_roc_auc / cross_roc_auc — ROC AUC: area under the ROC curve computed from predicted scores/probabilities (works for binary and, with options, multiclass). Higher = better ranking of positives over negatives.  ￼
-	•	own_f1_lo / own_f1_hi and cross_f1_lo / cross_f1_hi — lower/upper bounds of the 95% confidence interval for macro-F1 (from bootstrap in your code). A 95% CI is a range the procedure would cover the true value about 95% of the time under repeated sampling.  ￼
-	•	own_auc_lo / own_auc_hi and cross_auc_lo / cross_auc_hi — same idea, but for ROC AUC (95% bootstrap CI bounds).  ￼
-	•	n_train / n_own_test / n_cross_test — counts of samples used to train the model and to evaluate it on own vs cross tests.
-	•	own_icc2_1 / cross_icc2_1 — ICC(2,1) between the two models’ probability outputs on the same subjects: “two-way random effects, absolute agreement, single measurement.” It quantifies how closely the two raters (models) match in value, not just rank. own is computed on the own test set; cross on the cross test set.  ￼
+	- model_on / own_test / cross_test — which dataset/language the model was trained on (model_on) and where it’s evaluated: the own (in-domain) test vs the cross (out-of-domain) test.
+	- own_acc / cross_acc — accuracy: share of samples classified correctly on that test split.  ￼
+	- own_f1_macro / cross_f1_macro — macro-F1: unweighted mean of per-class F1 scores (treats each class equally). F1 itself is the harmonic mean of precision and recall.  ￼
+	- own_roc_auc / cross_roc_auc — ROC AUC: area under the ROC curve computed from predicted scores/probabilities (works for binary and, with options, multiclass). Higher = better ranking of positives over negatives.  ￼
+	- own_f1_lo / own_f1_hi and cross_f1_lo / cross_f1_hi — lower/upper bounds of the 95% confidence interval for macro-F1 (from bootstrap in your code). A 95% CI is a range the procedure would cover the true value about 95% of the time under repeated sampling.  ￼
+	- own_auc_lo / own_auc_hi and cross_auc_lo / cross_auc_hi — same idea, but for ROC AUC (95% bootstrap CI bounds).  ￼
+	- n_train / n_own_test / n_cross_test — counts of samples used to train the model and to evaluate it on own vs cross tests.
+	- own_icc2_1 / cross_icc2_1 — ICC(2,1) between the two models’ probability outputs on the same subjects: “two-way random effects, absolute agreement, single measurement.” It quantifies how closely the two raters (models) match in value, not just rank. own is computed on the own test set; cross on the cross test set.  ￼
 
 # Big picture
 
