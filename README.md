@@ -28,7 +28,10 @@ Within the AIREST project, the sentiment analysis capabilities of NLP algorithms
  
 - **Dataset splits**
 	- COSMUS : neutral - 4702, negative - 4541, positive - 2373;
- 	- Parlamint : using dev dataset, that has 739 sentences;
+ 	- Parlamint :
+  		- dev dataset:  739 sentences;
+    	- test dataset: 792 sentences;
+     	- train dataset: 3901 sentences;
 	- DCWOZ :
    		- Depression_Label(Main predictor) splits: 0 - 209, 1 - 66;
      	- Training splits - Using originaly split: train - 163, dev - 56,test - 56 . Using originaly split
