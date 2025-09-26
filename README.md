@@ -461,16 +461,28 @@ Main idea - classify Depression label
 
 ### 5. **Cross-validation: Train on EN, test on UA (and vice versa) — Gemma stack**
 
-| model_on | own_test | own_acc | own_f1_macro | own_roc_auc | cross_test | cross_acc | cross_f1_macro | cross_roc_auc | n_train | n_own_test | n_cross_test |
-|----------|----------|---------|--------------|-------------|------------|-----------|----------------|--------------|---------|------------|-------------|
-| EN       | EN       | 0.5536  | 0.46298      | 0.46380     | UA         | 0.66071   | 0.60520        | 0.60709      | 163     | 56         | 56          |
-| UA       | UA       | 0.6250  | 0.45931      | 0.48190     | EN         | 0.71429   | 0.51304        | 0.54600      | 163     | 56         | 56          |
+|   | model_on | own_test | own_acc  | own_f1_macro | own_roc_auc | own_f1_lo | own_f1_hi | own_auc_lo | own_auc_hi | cross_test | cross_acc | cross_f1_macro | cross_roc_auc | cross_f1_lo | cross_f1_hi | cross_auc_lo | cross_auc_hi | n_train | n_own_test | n_cross_test |
+|---|----------|----------|----------|--------------|-------------|-----------|-----------|------------|------------|------------|-----------|----------------|---------------|-------------|-------------|--------------|--------------|---------|------------|--------------|
+| 0 | EN       | EN       | 0.553571 | 0.462984     | 0.463801    | 0.368374  | 0.557823  | 0.373506   | 0.561835   | UA         | 0.660714  | 0.605195       | 0.607089      | 0.495767    | 0.70081     | 0.496358     | 0.708799     | 163     | 56         | 56           |
+| 1 | UA       | UA       | 0.625000 | 0.459310     | 0.481900    | 0.358491  | 0.543169  | 0.400000   | 0.551145   | EN         | 0.714286  | 0.513043       | 0.546003      | 0.400000    | 0.60000     | 0.479979     | 0.600000     | 163     | 56         | 56           |
 
 ### 6. **Cross-validation: Train on EN, test on UA (and vice versa) — Bert stack**
-|   | model_on | own_test | own_acc  | own_f1_macro | own_roc_auc | cross_test | cross_acc | cross_f1_macro | cross_roc_auc | n_train | n_own_test | n_cross_test |
-|---|----------|----------|----------|--------------|-------------|------------|-----------|----------------|---------------|---------|------------|--------------|
-| 0 | EN       | EN       | 0.767857 | 0.644358     | 0.634238    | UA         | 0.500000  | 0.466667       | 0.475113      | 163     | 56         | 56           |
-| 1 | UA       | UA       | 0.625000 | 0.487582     | 0.498492    | EN         | 0.696429  | 0.410526       | 0.500000      | 163     | 56         | 56           |
+
+|   | model_on | own_test | own_acc  | own_f1_macro | own_roc_auc | own_f1_lo | own_f1_hi | own_auc_lo | own_auc_hi | cross_test | cross_acc | cross_f1_macro | cross_roc_auc | cross_f1_lo | cross_f1_hi | cross_auc_lo | cross_auc_hi | n_train | n_own_test | n_cross_test |
+|---|----------|----------|----------|--------------|-------------|-----------|-----------|------------|------------|------------|-----------|----------------|---------------|-------------|-------------|--------------|--------------|---------|------------|--------------|
+| 0 | EN       | EN       | 0.767857 | 0.644358     | 0.634238    | 0.51189   | 0.756679  | 0.545455   | 0.727273   | UA         | 0.500000  | 0.466667       | 0.475113      | 0.365505    | 0.565800    | 0.365495     | 0.585519     | 163     | 56         | 56           |
+| 1 | UA       | UA       | 0.625000 | 0.487582     | 0.498492    | 0.37500   | 0.580061  | 0.413622   | 0.580826   | EN         | 0.696429  | 0.410526       | 0.500000      | 0.388889    | 0.430769    | 0.500000     | 0.500000     | 163     | 56         | 56           |
+
+Short description of table fields:
+	•	model_on / own_test / cross_test — which dataset/language the model was trained on (model_on) and where it’s evaluated: the own (in-domain) test vs the cross (out-of-domain) test.
+	•	own_acc / cross_acc — accuracy: share of samples classified correctly on that test split.  ￼
+	•	own_f1_macro / cross_f1_macro — macro-F1: unweighted mean of per-class F1 scores (treats each class equally). F1 itself is the harmonic mean of precision and recall.  ￼
+	•	own_roc_auc / cross_roc_auc — ROC AUC: area under the ROC curve computed from predicted scores/probabilities (works for binary and, with options, multiclass). Higher = better ranking of positives over negatives.  ￼
+	•	own_f1_lo / own_f1_hi and cross_f1_lo / cross_f1_hi — lower/upper bounds of the 95% confidence interval for macro-F1 (from bootstrap in your code). A 95% CI is a range the procedure would cover the true value about 95% of the time under repeated sampling.  ￼
+	•	own_auc_lo / own_auc_hi and cross_auc_lo / cross_auc_hi — same idea, but for ROC AUC (95% bootstrap CI bounds).  ￼
+	•	n_train / n_own_test / n_cross_test — counts of samples used to train the model and to evaluate it on own vs cross tests.
+	•	own_icc2_1 / cross_icc2_1 — ICC(2,1) between the two models’ probability outputs on the same subjects: “two-way random effects, absolute agreement, single measurement.” It quantifies how closely the two raters (models) match in value, not just rank. own is computed on the own test set; cross on the cross test set.  ￼
+	•	own_icc_lo / own_icc_hi and cross_icc_lo / cross_icc_hi — 95% CI bounds for those ICC(2,1) estimates (from the ICC routine you’re using).  ￼
 
 ---
 
