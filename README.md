@@ -28,7 +28,9 @@ Within the AIREST project, the sentiment analysis capabilities of NLP algorithms
  
 - **Dataset splits**
 	- COSMUS : neutral - 4702, negative - 4541, positive - 2373;
-	- DCWOZ : 0 - 209, 1 - 66; 
+	- DCWOZ :
+   		- Depression_Label(Main predictor) splits: 0 - 209, 1 - 66;
+     	- Training splits - Using originaly split: train - 163, dev - 56,test - 56 . Using originaly split
 	- All other datasets were distributed in an 80% train, 20% test format. 
    
 
