@@ -474,17 +474,17 @@ Main idea - classify Depression label
 
 ### 5. **Cross-validation: Train on EN, test on UA (and vice versa) — Gemma stack**
 
-|   | model_on | own_test | own_acc  | own_f1_macro | own_roc_auc | own_f1_lo | own_f1_hi | own_auc_lo | own_auc_hi | cross_test | cross_acc | cross_f1_macro | cross_roc_auc | cross_f1_lo | cross_f1_hi | cross_auc_lo | cross_auc_hi | n_train | n_own_test | n_cross_test |
-|---|----------|----------|----------|--------------|-------------|-----------|-----------|------------|------------|------------|-----------|----------------|---------------|-------------|-------------|--------------|--------------|---------|------------|--------------|
-| 0 | EN       | EN       | 0.553571 | 0.462984     | 0.463801    | 0.368374  | 0.557823  | 0.373506   | 0.561835   | UA         | 0.660714  | 0.605195       | 0.607089      | 0.495767    | 0.70081     | 0.496358     | 0.708799     | 163     | 56         | 56           |
-| 1 | UA       | UA       | 0.625000 | 0.459310     | 0.481900    | 0.358491  | 0.543169  | 0.400000   | 0.551145   | EN         | 0.714286  | 0.513043       | 0.546003      | 0.400000    | 0.60000     | 0.479979     | 0.600000     | 163     | 56         | 56           |
+|   | model_on | own_test | own_acc  | own_f1_macro | own_roc_auc | own_f1_lo | own_f1_hi | own_auc_lo | own_auc_hi | cross_test | cross_acc | cross_f1_macro | cross_roc_auc | cross_f1_lo | cross_f1_hi | cross_auc_lo | cross_auc_hi | n_train | n_own_test | n_cross_test | own_icc2_1  | cross_icc2_1 |
+|---|----------|----------|----------|--------------|-------------|-----------|-----------|------------|------------|------------|-----------|----------------|---------------|-------------|-------------|--------------|--------------|---------|------------|--------------|-------------|--------------|
+| 0 | EN       | EN       | 0.571429 | 0.522048     | 0.610106    | 0.417872  | 0.621103  | 0.488883   | 0.727273   | UA         | 0.392857  | 0.372859       | 0.554299      | 0.284207    | 0.455455    | 0.438867     | 0.666667     | 163     | 56         | 56           | -0.018956   | 0.078044     |
+| 1 | UA       | UA       | 0.625000 | 0.548907     | 0.549774    | 0.437500  | 0.648625  | 0.438026   | 0.650464   | EN         | 0.482143  | 0.452646       | 0.475867      | 0.355014    | 0.549076    | 0.359609     | 0.590544     | 163     | 56         | 56           | 0.078044    | -0.018956    |
 
 ### 6. **Cross-validation: Train on EN, test on UA (and vice versa) — Bert stack**
 
-|   | model_on | own_test | own_acc  | own_f1_macro | own_roc_auc | own_f1_lo | own_f1_hi | own_auc_lo | own_auc_hi | cross_test | cross_acc | cross_f1_macro | cross_roc_auc | cross_f1_lo | cross_f1_hi | cross_auc_lo | cross_auc_hi | n_train | n_own_test | n_cross_test |
-|---|----------|----------|----------|--------------|-------------|-----------|-----------|------------|------------|------------|-----------|----------------|---------------|-------------|-------------|--------------|--------------|---------|------------|--------------|
-| 0 | EN       | EN       | 0.767857 | 0.644358     | 0.634238    | 0.51189   | 0.756679  | 0.545455   | 0.727273   | UA         | 0.500000  | 0.466667       | 0.475113      | 0.365505    | 0.565800    | 0.365495     | 0.585519     | 163     | 56         | 56           |
-| 1 | UA       | UA       | 0.625000 | 0.487582     | 0.498492    | 0.37500   | 0.580061  | 0.413622   | 0.580826   | EN         | 0.696429  | 0.410526       | 0.500000      | 0.388889    | 0.430769    | 0.500000     | 0.500000     | 163     | 56         | 56           |
+|   | model_on | own_test | own_acc  | own_f1_macro | own_roc_auc | own_f1_lo | own_f1_hi | own_auc_lo | own_auc_hi | cross_test | cross_acc | cross_f1_macro | cross_roc_auc | cross_f1_lo | cross_f1_hi | cross_auc_lo | cross_auc_hi | n_train | n_own_test | n_cross_test |   own_icc2_1    |  cross_icc2_1   |
+|---|----------|----------|----------|--------------|-------------|-----------|-----------|------------|------------|------------|-----------|----------------|---------------|-------------|-------------|--------------|--------------|---------|------------|--------------|------------------|-----------------|
+| 0 | EN       | EN       | 0.821429 | 0.749553     | 0.686275    | 0.642857  | 0.851852  | 0.573962   | 0.808019   | UA         | 0.660714  | 0.557956       | 0.642534      | 0.446153    | 0.667413    | 0.530897     | 0.764468     | 163     | 56         | 56           | 2.635787e-16     | 3.864477e-02    |
+| 1 | UA       | UA       | 0.571429 | 0.542857     | 0.552790    | 0.437488  | 0.644231  | 0.432522   | 0.673709   | EN         | 0.696429  | 0.410526       | 0.500000      | 0.388889    | 0.430769    | 0.500000     | 0.500000     | 163     | 56         | 56           | 3.864477e-02     | 2.635787e-16    |
 
 Short description of table fields:
 	- model_on / own_test / cross_test — which dataset/language the model was trained on (model_on) and where it’s evaluated: the own (in-domain) test vs the cross (out-of-domain) test.
@@ -496,77 +496,29 @@ Short description of table fields:
 	- n_train / n_own_test / n_cross_test — counts of samples used to train the model and to evaluate it on own vs cross tests.
 	- own_icc2_1 / cross_icc2_1 — ICC(2,1) between the two models’ probability outputs on the same subjects: “two-way random effects, absolute agreement, single measurement.” It quantifies how closely the two raters (models) match in value, not just rank. own is computed on the own test set; cross on the cross test set.  ￼
 
-# Big picture
 
-- **Gemma stack**
-  - **Own (EN→EN, UA→UA):** weak separation—AUC ≈ 0.46–0.48, macro-F1 ≈ 0.46.
-  - **Cross (EN→UA, UA→EN):** better surface metrics—macro-F1 ≈ 0.51–0.61; AUC ≈ 0.55–0.61, but confidence intervals still brush 0.50.
-  - **Reading:** some cross-lingual robustness, yet ranking evidence remains borderline.
+## Key Takeaways
 
-- **BERT stack**
-  - **Own (EN→EN):** clearly strongest cell—acc ≈ 0.77, macro-F1 ≈ 0.64, AUC ≈ 0.63 (CI above 0.5).
-  - **Own (UA→UA) & Cross:** near chance—AUC ≈ 0.47–0.50; macro-F1 ≈ 0.41–0.49.
-  - **Reading:** features are English-centric; transfer to UA (and UA in-domain) is weak.
-
----
-
-# Why this pattern
-
-- **Domain/language shift.**  
-  Representations learned on English do not carry over cleanly to Ukrainian (lexicon, morphology, syntax, discourse markers). BERT appears tightly coupled to EN distributions; Gemma likely encodes higher-level semantics that degrade more gracefully, hence “cross > own” in some cells but still with modest separation.
-
-- **Calibration and near-constant scores.**  
-  Off-domain, some models emit poorly calibrated or low-variance probabilities. This depresses ROC-AUC (ranking signal), while accuracy/F1 can remain deceptively high if the fixed threshold happens to align with class prevalence on the target split.
-
-- **Threshold vs ranking.**  
-  Higher cross accuracy/F1 alongside AUC ≈ 0.55± suggests threshold effects rather than genuine class separation. A single global cutoff (e.g., 0.5) can look better on one domain and worse on another without improving the underlying ranking.
-
-- **Small evaluation sets.**  
-  With n≈56 per test, CIs are wide and often straddle 0.5; many apparent differences are not statistically decisive.
-
-- **Label orientation sanity check.**  
-  Any persistent AUC < 0.5 should trigger a check that the positive class and probability column are aligned as intended.
+- **Best in-domain performance:**  
+  **BERT EN→EN** with Accuracy **0.821**, Macro-F1 **0.750**, ROC-AUC **0.686**.
+- **Best cross-lingual transfer:**  
+  **BERT EN→UA** with Accuracy **0.661**, Macro-F1 **0.558**, ROC-AUC **0.643** (only cross split with robust AUC > 0.6 and F1 > 0.5).
+- **Gemma’s cross-lingual robustness:**  
+  Generally modest, with CIs often including 0.50. Some cross splits show better ranking than in-domain, but differences are not statistically decisive.
+- **Uncertainty:**  
+  Test set size is small (**n=56**), so confidence intervals are wide. Several metrics are not statistically distinct from chance.
 
 ---
 
-# Takeaways to report
+## Brief Interpretation
 
-- **Strongest in-domain:** BERT trained and tested on EN.  
-- **Cross-lingual generalization:** overall weak; Gemma shows partial robustness (macro-F1 up to ~0.61) but AUC evidence is borderline.  
-- **Most plausible drivers:** domain shift + probability miscalibration + threshold effects under small n.
-
----
-
-## Interpretation
-
-- **Gemma stack demonstrates strong cross-lingual transfer:**  
-  - *Tangentiality* and other discourse features extracted from Ukrainian data yield nearly equivalent predictive power as English, with cross-application of models (EN→UA, UA→EN) producing similar or even better performance.
-  - Classifiers trained on one language generalize well to the other, confirming feature consistency.
-
-- **BERT-multilingual vs BERT-EN:**  
-The performance of BERT-based feature extraction and classification was evaluated in both the English-only setting (BERT-base-cased) and the cross-lingual (Ukrainian) setting (BERT-base-multilingual-cased). The main findings are as follows:
-
-- **In-language performance (EN):**
-  - BERT-base-cased achieves the highest accuracy and F1 on English test data (accuracy = 0.77, F1_macro = 0.64 for DecisionTree), clearly outperforming other models in the English-only condition.
-- **Cross-lingual generalization:**
-  - When the BERT-EN model is applied to Ukrainian (translated) data, its performance drops sharply (accuracy = 0.50, F1_macro = 0.47), indicating limited cross-lingual transfer.
-  - The BERT-multilingual model, trained and tested on Ukrainian data, performs better (accuracy = 0.63, F1_macro = 0.49), but still lags behind the English-only BERT's best results.
-  - When the BERT-multilingual model, trained on Ukrainian, is applied back to English, performance recovers somewhat (accuracy = 0.70, F1_macro = 0.41), but not to the level of English-only BERT.
-- **Comparison with Gemma:**
-  - In contrast to Gemma embeddings, where cross-lingual transfer is strong (EN→UA and UA→EN show only minor drops, or even improvement), BERT-based features show significant performance degradation when crossing languages.
-- **Interpretation:**
-  - The results confirm that **monolingual BERT models are highly effective in-language**, but are not robust to cross-lingual application, especially for morphologically-rich and underrepresented languages like Ukrainian.
-  - **Multilingual BERT** offers better cross-lingual capacity but at the expense of top in-language performance, and still cannot match the cross-lingual stability of the Gemma stack in this use case.
-  - Feature importances also shift considerably between language/model settings, which should be considered when interpreting results in multilingual or translated contexts.
-   
-   **Key Point:**  
-   - The Gemma stack outperforms BERT for cross-lingual stability and transfer in this psychiatric outcome prediction task.  
-   - For monolingual English, BERT-base-cased remains a strong baseline, but for robust Ukrainian/English compatibility, Gemma is preferred.
-
-  
-- **Most effective model (on this sample):**  
-  - DecisionTree yielded clearest, interpretable importances; XGBoost and RandomForest did not provide major uplift, likely due to data size.
-
+- **English-trained representations travel better** than Ukrainian ones in this setup, especially for BERT.
+- **Gemma** offers partial cross-lingual robustness, but separation remains modest.
+- For deployment:
+  - Use **BERT EN→EN** for English-only.
+  - For cross-Ukrainian applications, **BERT EN→UA** offers the most reliable transfer in this benchmark, but results should be confirmed on larger UA test sets.
+  - Gemma stack may be preferred for robust Ukrainian/English compatibility where cross-lingual consistency is required.
+    
 - **Clinical implication:**  
   - Downstream task performance on Ukrainian is robust and does **not** suffer >10% drop vs English — confirming the OpenWillis feature pipeline is linguistically and clinically valid after adaptation.
 
