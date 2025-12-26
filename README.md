@@ -13,6 +13,40 @@ Within the AIREST project, the sentiment analysis capabilities of NLP algorithms
   - SentencePiece version: **0.2.0**  
   - PyTorch version: **2.8.0**  
   - Device: Tesla T4 GPU (15,360 MiB) for acceleration; fallback to CPU if necessary.
+
+ ### DCWOZ (EN→UA) translation and quality validation
+
+We translate the English DCWOZ dialogues into Ukrainian using the open-source MT model **`Yehor/kulyk-en-uk`** (based on **LiquidAI/LFM2-350M**, ~354M parameters; fine-tuned on ~40M EN–UK sentence pairs filtered by an automatic quality metric). :contentReference[oaicite:0]{index=0}
+
+**Performance benchmarks (FLORES-200).**  
+The authors report evaluation on the FLORES-200 devtest benchmark:
+- **EN → UK (`kulyk-en-uk`)**: **27.24 BLEU** :contentReference[oaicite:1]{index=1}  
+- **UK → EN (`kulyk-uk-en`)**: **36.27 BLEU** :contentReference[oaicite:2]{index=2}  
+
+To quantify translation quality and potential distortions introduced by translation (important for downstream NLP analyses), we report both **reference-free Quality Estimation** and **round-trip consistency** checks.
+
+**1) Reference-free MT quality estimation (QE).**  
+We compute **COMET-QE** using **`Unbabel/wmt22-cometkiwi-da`** (reference-free learned metric; regression model on top of InfoXLM; trained on WMT direct assessments + MLQE-PE). :contentReference[oaicite:3]{index=3}  
+**Result (DCWOZ EN→UA):** COMET-QE system score = **0.7393**.
+
+**2) Length preservation diagnostics.**  
+We compare token-length distributions between the English source and Ukrainian translations to detect pathological outputs (e.g., repetition loops).  
+- EN token length mean±std: **13.694 ± 18.559**  
+- UA token length mean±std: **11.318 ± 15.333**  
+- Length ratio (UA/EN) mean±std: **0.932 ± 3.325**
+
+**3) Lexical feature preservation (utterances with ≥5 tokens).**  
+- TTR EN mean±std: **0.8745 ± 0.1313**  
+- TTR UA mean±std: **0.9061 ± 0.1234**  
+- MATTR EN mean±std: **0.8812 ± 0.1202**  
+- MATTR UA mean±std: **0.9101 ± 0.1131**
+
+**4) Round-trip consistency check (EN→UA→EN) with chrF++.**  
+As an additional sanity check, we back-translate Ukrainian text to English and compute **chrF++** between the original English and back-translated English (chrF++ corresponds to chrF with word n-gram order = 2 in sacreBLEU). :contentReference[oaicite:4]{index=4}  
+**Result (EN_back vs EN):** chrF++ = **90.27 (case-sensitive)** / **95.30 (lowercased)**.
+
+> Interpretation: COMET-QE provides a quantified, reference-free estimate of EN→UA translation quality, while chrF++ on round-trip English provides a conservative consistency check (it measures recoverability after a second translation step and therefore is not a pure EN→UA metric).
+
     
 - **Hardware & memory footprints**  
   - Training / inference run on GPU (Tesla T4) / CPU fallback  
