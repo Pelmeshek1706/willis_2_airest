@@ -377,36 +377,92 @@ DAIC‑WOZ documentation, USC/ICT portal, and the DAIC‑WOZ EULA. ([dcapswoz.ic
 
 ## Results
 
-### BERT‑Base‑Cased(for english) vs BERT‑Multilingual‑Cased (for ukrainian)
+### BERT-Base-Cased (English) vs BERT-Multilingual-Cased (Ukrainian)
 
 I also compared performance of two other models:
 
-| Metric       | N   | Pearson_r  | Spearman_rho | MAE         | RMSE         | ICC2_1      | mean_diff_% (UK_vs_EN) | t_p             | wilcoxon_p        |
-|---------------|------|------------|--------------|--------------|----------------|---------------|-----------------------------|------------------|----------------------|
-| coherence     | 275  | 0.335050   | 0.298841     | 0.355406    | 0.355501      | 0.000199     | −41.980173               | 0.000000e+00    | 7.488097e‑47         |
-| perplexity    | 275  | 0.202752   | 0.290302     | 24,699.46107| 37,889.42130  | 0.144741     | −29.216398               | 4.198781e‑19    | 8.970070e‑27         |
-| tangentiality | 275  | 0.761982   | 0.740529     | 0.114286    | 0.116063      | 0.080850     | 54.005750                | 6.440214e‑210   | 7.488097e‑47         |
+| Metric        | N   | Pearson_r | Spearman_rho | MAE          | RMSE         | ICC2_1   | mean_diff_% (UK_vs_EN) | t_p           | wilcoxon_p   |
+| ------------- | --- | --------- | ------------ | ------------ | ------------ | -------- | ---------------------- | ------------- | ------------ |
+| coherence     | 275 | 0.335050  | 0.298841     | 0.355406     | 0.355501     | 0.000199 | −41.980173             | 0.000000e+00  | 7.488097e-47 |
+| perplexity    | 275 | 0.202752  | 0.290302     | 24,699.46107 | 37,889.42130 | 0.144741 | −29.216398             | 4.198781e-19  | 8.970070e-27 |
+| tangentiality | 275 | 0.761982  | 0.740529     | 0.114286     | 0.116063     | 0.080850 | 54.005750              | 6.440214e-210 | 7.488097e-47 |
 
 ### Gemma case for English vs Gemma for Ukrainian
-|   | metric       | N   | Pearson_r | Spearman_rho |      MAE      |      RMSE      | ICC2_1   | mean_diff_% (UK_vs_EN) |      t_p       |   wilcoxon_p    |
-|---|-------------|-----|-----------|--------------|---------------|----------------|----------|-----------------------|----------------|-----------------|
-| 0 | coherence   | 275 | 0.189010  | 0.193831     | 0.295724      | 0.295901       | 0.000276 | -37.258958            | 0.000000e+00   | 7.488097e-47    |
-| 1 | perplexity  | 275 | 0.166847  | 0.310692     | 106844.131222 | 168004.421501  | 0.029945 | -76.827925            | 2.761332e-31   | 1.152904e-44    |
-| 2 | tangeniality| 275 | 0.818952  | 0.788431     | 0.020776      | 0.028332       | 0.715477 | -3.113925             | 9.358040e-31   | 9.498690e-30    |
 
-**Why Gemma outperforms these BERT‑based models:**
+|   | metric       | N   | Pearson_r | Spearman_rho | MAE           | RMSE          | ICC2_1   | mean_diff_% (UK_vs_EN) | t_p          | wilcoxon_p   |
+| - | ------------ | --- | --------- | ------------ | ------------- | ------------- | -------- | ---------------------- | ------------ | ------------ |
+| 0 | coherence    | 275 | 0.189010  | 0.193831     | 0.295724      | 0.295901      | 0.000276 | -37.258958             | 0.000000e+00 | 7.488097e-47 |
+| 1 | perplexity   | 275 | 0.166847  | 0.310692     | 106844.131222 | 168004.421501 | 0.029945 | -76.827925             | 2.761332e-31 | 1.152904e-44 |
+| 2 | tangeniality | 275 | 0.818952  | 0.788431     | 0.020776      | 0.028332      | 0.715477 | -3.113925              | 9.358040e-31 | 9.498690e-30 |
 
-- Gemma’s tokenizer + pretraining better handles morphological diversity, giving more consistent embeddings across languages.  
-- Gemma‑3’s causal LM yields more reliable PPL comparisons than masked LM in BERT when using teacher‑forcing and comparable tokenization.  
-- Differences in BERT models are affected by vocabulary overlap and rare subwords for Ukrainian; these introduce noise and bias, especially in coherence and PPL metrics.  
-- In your comparison, BERT‑multilingual‑cased shows large negative mean_diff_% (UK vs EN) for coherence and perplexity, indicating UK values are much worse relative to EN; while Gemma shows much smaller mean differences and higher ICC, making it more stable for cross‑language metrics.
+---
+
+### QE-stratified EN↔UA agreement for tangentiality (Gemma vs BERT)
+
+To test whether EN↔UA tangentiality agreement depends on translation quality, we computed turn-level COMET-QE (participant-only), aggregated it to interview-level `QE_i = median(QE_i,j)`, and split interviews into tertiles (Low/Mid/High). Agreement is reported per bin (Pearson *r*, Spearman *ρ*, ICC(2,1), and mean shift Δμ = mean(UA − EN) with bootstrap 95% CI).
+
+#### Gemma (EmbeddingGemma tangentiality)
+
+| Model | QE bin |   n | QE median [min,max]  | r [95% CI]           | ρ [95% CI]           | ICC(2,1) | Mean shift Δμ [95% CI]  |
+| ----- | -----: | --: | -------------------- | -------------------- | -------------------- | -------: | ----------------------- |
+| Gemma |    All | 275 | 0.765 [0.609, 0.848] | 0.974 [0.967, 0.979] | 0.972 [0.961, 0.978] |    0.953 | −0.010 [−0.011, −0.009] |
+| Gemma |    Low |  92 | 0.713 [0.609, 0.739] | 0.935 [0.902, 0.958] | 0.932 [0.889, 0.954] |    0.914 | −0.008 [−0.011, −0.005] |
+| Gemma |    Mid |  91 | 0.765 [0.740, 0.787] | 0.966 [0.945, 0.979] | 0.959 [0.927, 0.973] |    0.926 | −0.011 [−0.013, −0.009] |
+| Gemma |   High |  92 | 0.807 [0.788, 0.848] | 0.970 [0.960, 0.978] | 0.972 [0.951, 0.981] |    0.939 | −0.011 [−0.014, −0.009] |
+
+**Interpretation (Gemma).**
+
+* Association is extremely high (r/ρ ≈ 0.93–0.97 across bins), and absolute agreement is **excellent** (ICC(2,1) ≈ 0.91–0.95). ICC values above 0.90 are commonly interpreted as “excellent” reliability. ([PMC][1])
+* Mean shift is very small (Δμ ≈ −0.01): Ukrainian tangentiality is ~0.01 lower than English on average, with tight CIs.
+* QE stratification shows only a modest reduction in Low-QE (r and ICC drop slightly), but agreement remains high overall.
+
+#### BERT (English BERT vs mBERT tangentiality)
+
+| Model | QE bin |   n | QE median [min,max]  | r [95% CI]           | ρ [95% CI]           | ICC(2,1) | Mean shift Δμ [95% CI] |
+| ----- | -----: | --: | -------------------- | -------------------- | -------------------- | -------: | ---------------------- |
+| BERT  |    All | 275 | 0.765 [0.609, 0.848] | 0.762 [0.714, 0.806] | 0.741 [0.679, 0.793] |    0.081 | 0.114 [0.112, 0.117]   |
+| BERT  |    Low |  92 | 0.713 [0.609, 0.739] | 0.823 [0.753, 0.879] | 0.815 [0.735, 0.874] |    0.082 | 0.116 [0.113, 0.119]   |
+| BERT  |    Mid |  91 | 0.765 [0.740, 0.787] | 0.713 [0.590, 0.801] | 0.671 [0.518, 0.780] |    0.078 | 0.114 [0.109, 0.118]   |
+| BERT  |   High |  92 | 0.807 [0.788, 0.848] | 0.762 [0.656, 0.834] | 0.727 [0.599, 0.818] |    0.084 | 0.113 [0.109, 0.118]   |
+
+**Interpretation (BERT).**
+
+* Association is moderate (r ≈ 0.71–0.82; ρ ≈ 0.67–0.82), but absolute agreement is **poor** (ICC(2,1) ≈ 0.08). Under common guidelines, ICC < 0.50 indicates poor reliability. ([PMC][1])
+* There is a large, consistent systematic shift: Δμ ≈ +0.114 (UA − EN), i.e., Ukrainian tangentiality is ~0.11 higher than English across all QE bins.
+* QE binning does **not** explain this: the shift and ICC stay nearly constant in Low/Mid/High. This pattern is more consistent with a **model/calibration mismatch** than with translation-quality effects.
+
+---
+
+### Why Gemma aligns better than BERT here (evidence-based)
+
+**1) “Same embedding space” vs “two different encoders.”**
+In the Gemma stack, both English and Ukrainian are embedded with the same embedding model (`google/embeddinggemma-300m`), so cosine-based geometry (and therefore tangentiality scale) is shared across languages by design. The EmbeddingGemma model card describes multilingual training (over 100 languages) and large-scale training data (~320B tokens), consistent with robust cross-lingual embedding behavior. ([Hugging Face][2])
+In the BERT comparison, English uses `bert-base-cased` while Ukrainian uses `bert-base-multilingual-cased` (mBERT). These are **different pretrained models** with different training distributions and tokenization/representation behavior, so there is no guarantee that cosine similarities (and derived tangentiality values) are on the same numeric scale across EN vs UA.
+
+**2) Multilingual BERT’s training setup can introduce language-dependent representation artifacts.**
+mBERT is pretrained on the 104 languages with the largest Wikipedias. ([Hugging Face][3])
+Google’s multilingual BERT documentation notes it uses a shared WordPiece vocabulary of ~110k subwords across languages. ([GitHub][4])
+Research probing mBERT finds that it learns multilingual representations but with “systematic deficiencies affecting certain language pairs,” which is consistent with language-dependent shifts in similarity-based downstream scores. ([arxiv.org][5])
+
+**3) Tokenizer size alone is not the whole explanation.**
+Gemma-family models use a large vocabulary (Gemma 2 inherits a ~256k vocabulary designed to work across many languages), but Gemma 2 is still described as trained on primarily English data and “not trained specifically for state-of-the-art multilingual capabilities.” ([arxiv.org][6])
+In this project, the decisive factor for tangentiality agreement is that **EmbeddingGemma is explicitly trained as a multilingual embedding model** with broad language coverage. ([Hugging Face][2])
+By contrast, mixing an English-only BERT with mBERT can yield a stable cross-language offset (Δμ ≈ +0.114) that correlation does not “fix,” and ICC(2,1) correctly flags as poor absolute agreement. ([PMC][1])
 
 ---
 
 ## Conclusion
 
-- **Tangentiality** in the Gemma stack is validated: high cross‑language agreement (r/ρ > 0.97, ICC = 0.95, mean difference ≈ 1.37%). The criteria are met, so this metric is suitable for further analysis.  
-- **Coherence and Pseudo‑Perplexity**, in the current implementation, do **not** meet the consistency criteria; especially PPL depends heavily on tokenization and frequency of subword units for Ukrainian.
+* **Tangentiality (Gemma stack)** is validated for EN↔UA: QE-stratified agreement remains extremely high (r/ρ ≈ 0.93–0.97; ICC(2,1) ≈ 0.91–0.95) with a small mean shift (Δμ ≈ −0.01). By common ICC guidance, this corresponds to excellent reliability. ([PMC][1])
+* **Tangentiality (BERT stack)** is **not** cross-language stable in the current configuration (English BERT vs mBERT): it shows a large systematic shift (Δμ ≈ +0.114) and very poor absolute agreement (ICC(2,1) ≈ 0.08), and this effect does not meaningfully vary with QE bin.
+* **Coherence and Pseudo-Perplexity** (in the current implementation) do **not** meet the consistency criteria; PPL and coherence are especially sensitive to model/tokenization and are not directly comparable across EN↔UA without stronger calibration controls.
+
+[1]: https://pmc.ncbi.nlm.nih.gov/articles/PMC4913118/?utm_source=chatgpt.com "A Guideline of Selecting and Reporting Intraclass ..."
+[2]: https://huggingface.co/google/embeddinggemma-300m "google/embeddinggemma-300m · Hugging Face"
+[3]: https://huggingface.co/google-bert/bert-base-multilingual-cased?utm_source=chatgpt.com "google-bert/bert-base-multilingual-cased"
+[4]: https://github.com/google-research/bert/blob/master/multilingual.md "bert/multilingual.md at master · google-research/bert · GitHub"
+[5]: https://arxiv.org/abs/1906.01502?utm_source=chatgpt.com "How multilingual is Multilingual BERT?"
+[6]: https://arxiv.org/html/2408.00118v1 "Gemma 2: Improving Open Language Models at a Practical Size"
 
 
 # Section F — Downstream Predictive Validation
