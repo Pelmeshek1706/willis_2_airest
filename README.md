@@ -14,9 +14,9 @@ Within the AIREST project, the sentiment analysis capabilities of NLP algorithms
   - PyTorch version: **2.8.0**  
   - Device: Tesla T4 GPU (15,360 MiB) for acceleration; fallback to CPU if necessary.
 
- ### DAIC-WOZ (EN→UA) translation and quality validation
+ ### DCWOZ (EN→UA) translation and quality validation
 
-We translate the English DAIC-WOZ dialogues into Ukrainian using the open-source MT model **`Yehor/kulyk-en-uk`** (based on **LiquidAI/LFM2-350M**, ~354M parameters; fine-tuned on ~40M EN–UK sentence pairs filtered by an automatic quality metric). :contentReference[oaicite:0]{index=0}
+We translate the English DCWOZ dialogues into Ukrainian using the open-source MT model **`Yehor/kulyk-en-uk`** (based on **LiquidAI/LFM2-350M**, ~354M parameters; fine-tuned on ~40M EN–UK sentence pairs filtered by an automatic quality metric). :contentReference[oaicite:0]{index=0}
 
 **Performance benchmarks (FLORES-200).**  
 The authors report evaluation on the FLORES-200 devtest benchmark:
@@ -27,7 +27,7 @@ To quantify translation quality and potential distortions introduced by translat
 
 **1) Reference-free MT quality estimation (QE).**  
 We compute **COMET-QE** using **`Unbabel/wmt22-cometkiwi-da`** (reference-free learned metric; regression model on top of InfoXLM; trained on WMT direct assessments + MLQE-PE). :contentReference[oaicite:3]{index=3}  
-**Result (DAIC-WOZ EN→UA):** COMET-QE system score = **0.7393**.
+**Result (DCWOZ EN→UA):** COMET-QE system score = **0.7393**.
 
 **2) Length preservation diagnostics.**  
 We compare token-length distributions between the English source and Ukrainian translations to detect pathological outputs (e.g., repetition loops).  
@@ -66,7 +66,7 @@ As an additional sanity check, we back-translate Ukrainian text to English and c
   		- dev dataset:  739 sentences;
     	- test dataset: 792 sentences;
      	- train dataset: 3901 sentences;
-	- DAIC-WOZ :
+	- DCWOZ :
    		- Depression_Label(Main predictor) splits: 0 - 209, 1 - 66;
      	- Training splits - Using originaly split: train - 163, dev - 56,test - 56 . Using originaly split
 	- All other datasets were distributed in an 80% train, 20% test format.
@@ -405,7 +405,7 @@ I also compared performance of two other models:
 
 ## Conclusion
 
-- **Tangentiality** in the Gemma stack shows cross‑language agreement (r≈0.819, ρ≈0.788, ICC≈0.715, mean difference≈−3.11%). This metric is suitable for further analysis.  
+- **Tangentiality** in the Gemma stack is validated: high cross‑language agreement (r/ρ > 0.97, ICC = 0.95, mean difference ≈ 1.37%). The criteria are met, so this metric is suitable for further analysis.  
 - **Coherence and Pseudo‑Perplexity**, in the current implementation, do **not** meet the consistency criteria; especially PPL depends heavily on tokenization and frequency of subword units for Ukrainian.
 
 
