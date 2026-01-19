@@ -81,29 +81,45 @@ PAST = ["VBD", "VBN"]
 from transformers import RobertaConfig, RobertaForSequenceClassification, RobertaTokenizer, pipeline
 from huggingface_hub import hf_hub_download
 from safetensors.torch import load_file
+import math
+from typing import Dict, Tuple, Optional
 
 class UkrSentimentAnalyzer:
     """
-    Ukrainian sentiment analysis model based on YShynkarov/ukr-roberta-cosmus-sentiment.
-    Provides polarity_scores() and major_label().
+    Ukrainian sentiment analysis model: YShynkarov/ukr-roberta-cosmus-sentiment
+
+    Provides:
+      - polarity_scores(text) -> {"mixed","negative","neutral","positive"}
+      - vader_polarity_scores(text) -> {"neg","neu","pos","compound"}  (VADER-like)
     """
+
     map_labels = {
-                'LABEL_0': 'mixed',
-                'LABEL_1': 'negative',
-                'LABEL_2': 'neutral',
-                'LABEL_3': 'positive',
-            }
+        "LABEL_0": "mixed",
+        "LABEL_1": "negative",
+        "LABEL_2": "neutral",
+        "LABEL_3": "positive",
+    }
+
     int_label_map = {
         "negative": -1.0,
         "neutral": 0.0,
         "positive": 1.0,
-        "mixed": 0
+        "mixed": 0.0,
     }
 
-    def __init__(self):
+    def __init__(
+        self,
+        device: int = -1,
+        compound_scale: float = 1.0,
+        compound_alpha: float = 15.0,   # VADER default alpha
+        split_mixed: bool = True,
+    ):
+        self.compound_scale = float(compound_scale)
+        self.compound_alpha = float(compound_alpha)
+        self.split_mixed = bool(split_mixed)
+
         repo_id = "YShynkarov/ukr-roberta-cosmus-sentiment"
-        safetensor = hf_hub_download(repo_id=repo_id,
-                                     filename="ukrroberta_cosmus_sentiment.safetensors")
+        safetensor = hf_hub_download(repo_id=repo_id, filename="ukrroberta_cosmus_sentiment.safetensors")
 
         config = RobertaConfig.from_pretrained("youscan/ukr-roberta-base", num_labels=4)
         tokenizer = RobertaTokenizer.from_pretrained("youscan/ukr-roberta-base")
@@ -112,38 +128,56 @@ class UkrSentimentAnalyzer:
         state_dict = load_file(safetensor)
         model.load_state_dict(state_dict)
         model.eval()
+
         self._pipe = pipeline(
             "text-classification",
             model=model,
             tokenizer=tokenizer,
-            device=-1,               
+            device=device,
             return_all_scores=True,
             truncation=True,
         )
 
-    def polarity_scores(self, text: str) -> dict:
-        """
-        Returns dict:
-          {
-            "negative": float_score,
-            "neutral":  float_score,
-            "positive": float_score,
-            "mixed":    float_score
-          }
-        """
-        # pipeline returns list[list[{"label":..., "score":...}, ...]]
-        results = self._pipe(text)
-        scores = {
-            self.map_labels[item["label"]]: item["score"]
-            for item in results[0]
-        }
+    def old_polarity_scores(self, text: str) -> Dict[str, float]:
+        results = self._pipe(text)  # list[list[{"label","score"}]]
+        scores = {self.map_labels[it["label"]]: float(it["score"]) for it in results[0]}
+        for k in ("mixed", "negative", "neutral", "positive"):
+            scores.setdefault(k, 0.0)
         return scores
 
-    def major_label(self, text: str) -> tuple[str, int]:
-        """
-        Returns (text_label, int_label),
-        where int_label ∈ {-1,0,1,2} for negative, neutral, positive, mixed.
-        """
+    def _vader_normalize(self, x: float) -> float:
+        # VADER normalization: x / sqrt(x^2 + alpha)
+        return x / math.sqrt(x * x + self.compound_alpha)
+
+    def polarity_scores(self, text: str) -> Dict[str, float]:
+        s = self.polarity_scores(text)
+        pos = s["positive"]
+        neg = s["negative"]
+        neu = s["neutral"]
+        mix = s["mixed"]
+
+        # VADER-like pos/neg/neu proportions
+        if self.split_mixed:
+            pos_v = pos + 0.5 * mix
+            neg_v = neg + 0.5 * mix
+        else:
+            pos_v = pos
+            neg_v = neg
+
+        denom = pos_v + neg_v + neu
+        if denom > 0:
+            pos_v /= denom
+            neg_v /= denom
+            neu /= denom
+        else:
+            pos_v, neg_v, neu = 0.0, 0.0, 1.0
+
+        raw = self.compound_scale * (pos - neg)
+        compound = float(self._vader_normalize(raw))
+
+        return {"neg": float(neg_v), "neu": float(neu), "pos": float(pos_v), "compound": compound}
+
+    def major_label(self, text: str) -> Tuple[str, float]:
         scores = self.polarity_scores(text)
         best = max(scores, key=scores.get)
         return best, self.int_label_map[best]
@@ -586,7 +620,7 @@ def get_sentiment(df_list, text_list, measures, lang='en'):
         _, turn_list, full_text = text_list
         lemmatizer = spacy.load("uk_core_news_sm") if lang in ['ua', 'uk'] else spacy.load('en_core_web_sm') # should be changed to normal model
         
-        sentiment = SentimentIntensityAnalyzer() if lang == 'en' else UkrSentimentAnalyzer()
+        sentiment = SentimentIntensityAnalyzer() if lang == 'en' else UkrSentimentAnalyzer(compound_scale=4.0, compound_alpha=15.0, split_mixed=True)
         cols = [measures["neg"], measures["neu"], measures["pos"], measures["compound"], measures["speech_mattr_5"], measures["speech_mattr_10"], measures["speech_mattr_25"], measures["speech_mattr_50"], measures["speech_mattr_100"]]
 
         for idx, u in enumerate(turn_list):
