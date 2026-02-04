@@ -255,7 +255,18 @@ def common_summary_feature(df_summ, json_data, model, speaker_label):
         logger.info("Error in file length calculation")
     return df_summ
 
-def process_transcript(df_list, json_conf, measures, min_turn_length, min_coherence_turn_length, speaker_label, source, language, option):
+def process_transcript(
+    df_list,
+    json_conf,
+    measures,
+    min_turn_length,
+    min_coherence_turn_length,
+    speaker_label,
+    source,
+    language,
+    option,
+    feature_groups=None,
+):
     """
     ------------------------------------------------------------------------------------------------------
     
@@ -282,6 +293,9 @@ def process_transcript(df_list, json_conf, measures, min_turn_length, min_cohere
     option: str
         option for which measures to calculate
             can be 'simple' or 'coherence'
+    feature_groups: list[str] | set[str] | None
+        Optional feature group selector. When provided, only these groups are computed.
+        Supported groups: "pause", "repetition", "coherence", "sentiment", "first_person".
     
     Returns:
     ...........
@@ -302,7 +316,18 @@ def process_transcript(df_list, json_conf, measures, min_turn_length, min_cohere
         info = filter_vosk(json_conf, measures)
 
     if len(info[0]) > 0 and len(info[1]) > 0:
-        df_list = cutil.process_language_feature(df_list, info, speaker_label, min_turn_length, min_coherence_turn_length, language, get_time_columns(source), option, measures)
+        df_list = cutil.process_language_feature(
+            df_list,
+            info,
+            speaker_label,
+            min_turn_length,
+            min_coherence_turn_length,
+            language,
+            get_time_columns(source),
+            option,
+            measures,
+            feature_groups=feature_groups,
+        )
     return df_list
 
 def get_time_columns(source):
@@ -328,7 +353,15 @@ def get_time_columns(source):
     else:
         return ["start", "end"]
 
-def speech_characteristics(json_conf, language="en", speaker_label=None, min_turn_length=1, min_coherence_turn_length=5, option='coherence'):
+def speech_characteristics(
+    json_conf,
+    language="en",
+    speaker_label=None,
+    min_turn_length=1,
+    min_coherence_turn_length=5,
+    option='coherence',
+    feature_groups=None,
+):
     """
     ------------------------------------------------------------------------------------------------------
 
@@ -349,6 +382,9 @@ def speech_characteristics(json_conf, language="en", speaker_label=None, min_tur
     option: str
         option for which measures to calculate
          can be 'simple' or 'coherence'
+    feature_groups: list[str] | set[str] | None
+        Optional feature group selector. When provided, only these groups are computed.
+        Supported groups: "pause", "repetition", "coherence", "sentiment", "first_person".
 
     Returns:
     ...........
@@ -381,13 +417,46 @@ def speech_characteristics(json_conf, language="en", speaker_label=None, min_tur
                 cutil.download_ua_resources()
 
             if is_whisper_transcribe(json_conf):
-                df_list = process_transcript(df_list, json_conf, measures, min_turn_length, min_coherence_turn_length, speaker_label, 'whisper', language, option)
+                df_list = process_transcript(
+                    df_list,
+                    json_conf,
+                    measures,
+                    min_turn_length,
+                    min_coherence_turn_length,
+                    speaker_label,
+                    'whisper',
+                    language,
+                    option,
+                    feature_groups=feature_groups,
+                )
 
             elif is_amazon_transcribe(json_conf):
-                df_list = process_transcript(df_list, json_conf, measures, min_turn_length, min_coherence_turn_length, speaker_label, 'aws', language, option)
+                df_list = process_transcript(
+                    df_list,
+                    json_conf,
+                    measures,
+                    min_turn_length,
+                    min_coherence_turn_length,
+                    speaker_label,
+                    'aws',
+                    language,
+                    option,
+                    feature_groups=feature_groups,
+                )
 
             else:
-                df_list = process_transcript(df_list, json_conf, measures, min_turn_length, min_coherence_turn_length, speaker_label, 'vosk', language, option)
+                df_list = process_transcript(
+                    df_list,
+                    json_conf,
+                    measures,
+                    min_turn_length,
+                    min_coherence_turn_length,
+                    speaker_label,
+                    'vosk',
+                    language,
+                    option,
+                    feature_groups=feature_groups,
+                )
 
     except Exception as e:
         logger.info(f"Error in Speech Characteristics {e}")

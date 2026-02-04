@@ -12,7 +12,7 @@ import numpy as np
 import torch
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, BertTokenizer, BertModel, BertForMaskedLM
 from huggingface_hub import login
 import os
 
@@ -27,8 +27,22 @@ logger = logging.getLogger()
 logging.getLogger("transformers").setLevel(logging.ERROR)
 
 
+# Select coherence backend: "gemma" (default) or "bert".
+# Override via env OPENWILLIS_COHERENCE_BACKEND or by setting COHERENCE_BACKEND at runtime.
+COHERENCE_BACKEND = os.getenv("OPENWILLIS_COHERENCE_BACKEND", "gemma").strip().lower()
+
 DEFAULT_EMBEDDING_MODEL_ID = "google/embeddinggemma-300m"
 DEFAULT_PPL_MODEL_ID = "google/gemma-3-270m"
+BERT_EN_MODEL_ID = os.getenv("OPENWILLIS_BERT_EN_MODEL_ID", "bert-base-cased")
+BERT_MULTI_MODEL_ID = os.getenv("OPENWILLIS_BERT_MULTI_MODEL_ID", "bert-base-multilingual-uncased")
+BERT_SENTENCE_EN_MODEL_ID = os.getenv(
+    "OPENWILLIS_BERT_SENTENCE_EN_MODEL_ID",
+    "sentence-transformers/all-MiniLM-L6-v2",
+)
+BERT_SENTENCE_MULTI_MODEL_ID = os.getenv(
+    "OPENWILLIS_BERT_SENTENCE_MULTI_MODEL_ID",
+    "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+)
 PPL_MAX_TOKENS = 2048
 EMBEDDING_BATCH_SIZE = 256
 WINDOW_BATCH_SIZE = 512
@@ -62,6 +76,15 @@ def _maybe_enable_tf32(device: torch.device) -> None:
 
 
 _MODEL_CACHE: Dict[str, Dict[str, object]] = {}
+_BERT_CACHE: Dict[str, Dict[str, object]] = {}
+
+
+def _get_backend() -> str:
+    backend = (COHERENCE_BACKEND or "gemma").strip().lower()
+    if backend not in {"gemma", "bert"}:
+        logger.warning("Unknown COHERENCE_BACKEND=%s; defaulting to gemma.", backend)
+        return "gemma"
+    return backend
 
 
 def _load_sentence_encoder(device: torch.device) -> SentenceTransformer:
@@ -146,6 +169,64 @@ def get_model_bundle(language: str, device_hint: Optional[str] = None) -> Dict[s
     }
 
     _MODEL_CACHE[cache_key] = bundle
+    return bundle
+
+
+def _resolve_bert_model_id(language: str, measures: Dict[str, object]) -> Optional[str]:
+    if language in measures.get("english_langs", []):
+        return BERT_EN_MODEL_ID
+    if language in measures.get("supported_langs_bert", []):
+        return BERT_MULTI_MODEL_ID
+    return None
+
+
+def _resolve_sentence_encoder_id(language: str, measures: Dict[str, object]) -> Optional[str]:
+    if language in measures.get("english_langs", []):
+        return BERT_SENTENCE_EN_MODEL_ID
+    if language in measures.get("supported_langs_sentence_embeddings", []):
+        return BERT_SENTENCE_MULTI_MODEL_ID
+    return None
+
+
+def get_bert_bundle(language: str, measures: Dict[str, object], device_hint: Optional[str] = None) -> Dict[str, object]:
+    """Lazy-load and cache the BERT models required for coherence metrics."""
+    cache_key = (language or "").lower() or "default"
+    bundle = _BERT_CACHE.get(cache_key)
+    if bundle:
+        return bundle
+
+    device = _select_torch_device(device_hint)
+    _maybe_enable_tf32(device)
+
+    sentence_encoder = None
+    sentence_model_id = _resolve_sentence_encoder_id(language, measures)
+    if sentence_model_id:
+        try:
+            sentence_encoder = SentenceTransformer(sentence_model_id, device=device.type)
+        except Exception:
+            if device.type != "cpu":
+                sentence_encoder = SentenceTransformer(sentence_model_id, device="cpu")
+
+    tokenizer = word_model = mlm_model = None
+    model_id = _resolve_bert_model_id(language, measures)
+    if model_id:
+        tokenizer = BertTokenizer.from_pretrained(model_id)
+        word_model = BertModel.from_pretrained(model_id)
+        mlm_model = BertForMaskedLM.from_pretrained(model_id)
+        word_model.eval()
+        mlm_model.eval()
+        word_model.to(device)
+        mlm_model.to(device)
+
+    bundle = {
+        "device": device,
+        "sentence_encoder": sentence_encoder,
+        "tokenizer": tokenizer,
+        "word_model": word_model,
+        "mlm_model": mlm_model,
+    }
+
+    _BERT_CACHE[cache_key] = bundle
     return bundle
 
 def get_word_embeddings(word_list, sentence_encoder):
@@ -266,6 +347,112 @@ def get_word_coherence_utterance(row, sentence_encoder, measures):
 
     return word_coherence, word_coherence_5, word_coherence_10, word_word_variability    
 
+
+def get_word_embeddings_bert(word_list, tokenizer: BertTokenizer, model: BertModel) -> np.ndarray:
+    """
+    ------------------------------------------------------------------------------------------------------
+
+    This function calculates the word embeddings for the input text using BERT.
+
+    Parameters:
+    ...........
+    word_list: list
+        List of transcribed text at the word level.
+    tokenizer: BertTokenizer
+        A tokenizer object for BERT.
+    model: BertModel
+        A BERT model object.
+
+    Returns:
+    ...........
+    word_embeddings: numpy array
+        The calculated word embeddings.
+
+    ------------------------------------------------------------------------------------------------------
+    """
+    if len(word_list) == 0:
+        return np.zeros((0, 0), dtype=np.float32)
+
+    device = next(model.parameters()).device if model is not None else torch.device("cpu")
+
+    def _embed_chunk(chunk: List[str]) -> np.ndarray:
+        inputs = tokenizer(chunk, return_tensors="pt", padding=True, truncation=True)
+        inputs = {k: v.to(device) for k, v in inputs.items()}
+        with torch.no_grad():
+            outputs = model(**inputs)
+        return outputs.last_hidden_state.mean(1).detach().cpu().numpy()
+
+    if len(word_list) >= 512:
+        word_embeddings = []
+        for i in range(0, len(word_list), 512):
+            chunk = word_list[i:i + 512]
+            word_embeddings.append(_embed_chunk(chunk))
+        return np.concatenate(word_embeddings, axis=0)
+
+    return _embed_chunk(word_list)
+
+
+def get_word_coherence_utterance_bert(row, tokenizer, model, measures):
+    """
+    ------------------------------------------------------------------------------------------------------
+
+    This function calculates word coherence measures for a single utterance using BERT embeddings.
+
+    Parameters:
+    ...........
+    row: pandas dataframe
+        A dataframe containing the turns extracted from the JSON object for the specified speaker.
+    tokenizer: BertTokenizer
+        A tokenizer object for BERT.
+    model: BertModel
+        A BERT model object.
+    measures: dict
+        A dictionary containing the names of the columns in the output dataframes.
+
+    Returns:
+    ...........
+    word_coherence: list
+        A list containing the calculated semantic similarity of each word to the immediately preceding word.
+    word_coherence_5: list
+        A list containing the calculated semantic similarity of each word in 5-words window.
+    word_coherence_10: list
+        A list containing the calculated semantic similarity of each word in 10-words window.
+    word_word_variability: dict
+        A dictionary containing the calculated word-to-word variability at k inter-word distances.
+
+    ------------------------------------------------------------------------------------------------------
+    """
+    words_texts = row[measures['words_texts']]
+    if len(words_texts) == 0:
+        return [np.nan] * len(words_texts), [np.nan] * len(words_texts), [np.nan] * len(words_texts), {k: [np.nan] * len(words_texts) for k in range(2, 11)}
+
+    word_embeddings = get_word_embeddings_bert(words_texts, tokenizer, model)
+    similarity_matrix = cosine_similarity(word_embeddings)
+
+    if len(words_texts) > 1:
+        word_coherence = [np.nan] + [similarity_matrix[j, j - 1] for j in range(1, len(words_texts))]
+    else:
+        word_coherence = [np.nan] * len(words_texts)
+
+    if len(words_texts) > 5:
+        word_coherence_5 = [np.nan] * 2 + [np.mean(similarity_matrix[j - 2:j + 3, j]) for j in range(2, len(words_texts) - 2)] + [np.nan] * 2
+    else:
+        word_coherence_5 = [np.nan] * len(words_texts)
+
+    if len(words_texts) > 10:
+        word_coherence_10 = [np.nan] * 5 + [np.mean(similarity_matrix[j - 5:j + 6, j]) for j in range(5, len(words_texts) - 5)] + [np.nan] * 5
+    else:
+        word_coherence_10 = [np.nan] * len(words_texts)
+
+    word_word_variability = {}
+    for k in range(2, 11):
+        if len(words_texts) > k:
+            word_word_variability[k] = [similarity_matrix[j, j + k] for j in range(len(words_texts) - k)] + [np.nan] * k
+        else:
+            word_word_variability[k] = [np.nan] * len(words_texts)
+
+    return word_coherence, word_coherence_5, word_coherence_10, word_word_variability
+
 def get_word_coherence_summary(word_df, summ_df, measures):
     """
     ------------------------------------------------------------------------------------------------------
@@ -357,13 +544,24 @@ def get_word_coherence(df_list, utterances_speaker, min_coherence_turn_length, l
     """
     try:
         word_df, turn_df, summ_df = df_list
+        backend = _get_backend()
+        coherence_fn = None
 
-        bundle = get_model_bundle(language)
-        sentence_encoder: Optional[SentenceTransformer] = bundle.get("sentence_encoder")
-
-        if sentence_encoder is None:
-            logger.info(f"Sentence encoder not available for language {language}; skipping word coherence analysis.")
-            return df_list
+        if backend == "bert":
+            bundle = get_bert_bundle(language, measures)
+            tokenizer = bundle.get("tokenizer")
+            word_model = bundle.get("word_model")
+            if tokenizer is None or word_model is None:
+                logger.info(f"BERT models not available for language {language}; skipping word coherence analysis.")
+                return df_list
+            coherence_fn = lambda row: get_word_coherence_utterance_bert(row, tokenizer, word_model, measures)
+        else:
+            bundle = get_model_bundle(language)
+            sentence_encoder: Optional[SentenceTransformer] = bundle.get("sentence_encoder")
+            if sentence_encoder is None:
+                logger.info(f"Sentence encoder not available for language {language}; skipping word coherence analysis.")
+                return df_list
+            coherence_fn = lambda row: get_word_coherence_utterance(row, sentence_encoder, measures)
 
         overall_lists = _new_coherence_lists()
 
@@ -381,7 +579,7 @@ def get_word_coherence(df_list, utterances_speaker, min_coherence_turn_length, l
                         append_nan_values(chunk_lists, len(words))
                         continue
 
-                    coherence, coherence_5, coherence_10, variability = get_word_coherence_utterance(row, sentence_encoder, measures)
+                    coherence, coherence_5, coherence_10, variability = coherence_fn(row)
 
                     chunk_lists['word_coherence'] += coherence
                     chunk_lists['word_coherence_5'] += coherence_5
@@ -559,12 +757,142 @@ def calculate_perplexity(
 
     return global_ppl, ppl_2, ppl_5, ppl_7
 
+
+def calculate_perplexity_bert(
+    text: str,
+    model: Optional[BertForMaskedLM],
+    tokenizer: Optional[BertTokenizer],
+) -> Tuple[float, float, float, float]:
+    """
+    ------------------------------------------------------------------------------------------------------
+
+    This function calculates the pseudo-perplexity of the input text using BERT (masked LM).
+
+    Parameters:
+    ...........
+    text: str
+        The input text to be analyzed.
+    model: BertForMaskedLM
+        A BERT masked language model.
+    tokenizer: BertTokenizer
+        A BERT tokenizer.
+
+    Returns:
+    ...........
+    Tuple of floats
+        The calculated pseudo-perplexity of the input text.
+        The calculated pseudo-perplexity of the input text using 2 words before and after the masked token.
+        The calculated pseudo-perplexity of the input text using 5 words before and after the masked token.
+        The calculated pseudo-perplexity of the input text using 7 words before and after the masked token.
+
+    ------------------------------------------------------------------------------------------------------
+    """
+    if model is None or tokenizer is None:
+        return np.nan, np.nan, np.nan, np.nan
+
+    if not isinstance(text, str):
+        return np.nan, np.nan, np.nan, np.nan
+
+    clean_text = re.sub(r"\s+", " ", text.strip())
+    if len(clean_text) == 0 or len(clean_text.split()) < 2:
+        return np.nan, np.nan, np.nan, np.nan
+
+    tokens = tokenizer(clean_text, return_tensors="pt")
+    input_ids = tokens.input_ids  # [1, T]
+
+    try:
+        device = next(model.parameters()).device
+    except Exception:
+        device = torch.device("cpu")
+    input_ids = input_ids.to(device)
+
+    seq_len = int(input_ids.size(1))
+    if seq_len < 2:
+        return np.nan, np.nan, np.nan, np.nan
+
+    max_len_model = int(getattr(model.config, "max_position_embeddings", 512))
+    mask_id = tokenizer.mask_token_id
+    if mask_id is None:
+        return np.nan, np.nan, np.nan, np.nan
+
+    pad_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else 0
+
+    def _adjust_bounds(i, window_size, seq_len, max_len):
+        start = max(0, i - window_size)
+        end = min(seq_len - 1, i + window_size)
+        L = end - start + 1
+        if L > max_len:
+            left_budget = min(i - start, (max_len - 1) // 2)
+            right_budget = max_len - 1 - left_budget
+            start = i - left_budget
+            end = min(i + right_budget, seq_len - 1)
+            L = end - start + 1
+            if L > max_len:
+                start = end - (max_len - 1)
+        return int(start), int(end)
+
+    def _batched_log_probs_for_window(window_size, batch_size=64):
+        all_log_probs = []
+        indices = list(range(seq_len))
+        with torch.no_grad():
+            for b_start in range(0, seq_len, batch_size):
+                b_end = min(seq_len, b_start + batch_size)
+                batch_idx = indices[b_start:b_end]
+
+                segs = []
+                adj_positions = []
+                true_ids = []
+                maxL = 0
+                for i in batch_idx:
+                    start, end = _adjust_bounds(i, window_size, seq_len, max_len_model)
+                    seg = input_ids[0, start:end + 1].clone()
+                    idx_adj = i - start
+                    seg[idx_adj] = mask_id
+                    segs.append(seg)
+                    adj_positions.append(idx_adj)
+                    true_ids.append(int(input_ids[0, i].item()))
+                    if seg.numel() > maxL:
+                        maxL = int(seg.numel())
+
+                if not segs:
+                    continue
+
+                B = len(segs)
+                batch_inputs = torch.full((B, maxL), pad_id, dtype=input_ids.dtype, device=device)
+                attn_mask = torch.zeros((B, maxL), dtype=torch.long, device=device)
+                for r, seg in enumerate(segs):
+                    L = int(seg.numel())
+                    batch_inputs[r, :L] = seg
+                    attn_mask[r, :L] = 1
+
+                outputs = model(input_ids=batch_inputs, attention_mask=attn_mask)
+                logits = outputs.logits  # [B, maxL, V]
+                rows = torch.arange(len(adj_positions), device=device)
+                pos_logits = logits[rows, torch.tensor(adj_positions, device=device), :]
+                pos_log_probs = torch.log_softmax(pos_logits, dim=-1)
+                gathered = pos_log_probs[rows, torch.tensor(true_ids, device=device)]
+                all_log_probs.extend(gathered.detach().cpu().tolist())
+
+        return all_log_probs
+
+    log_probs_256 = _batched_log_probs_for_window(min(256, max_len_model - 1))
+    log_probs_2 = _batched_log_probs_for_window(2)
+    log_probs_5 = _batched_log_probs_for_window(5)
+    log_probs_7 = _batched_log_probs_for_window(7)
+
+    perplexity = float(np.exp(-np.mean(log_probs_256))) if len(log_probs_256) else np.nan
+    perplexity_5 = float(np.exp(-np.mean(log_probs_2))) if len(log_probs_2) else np.nan
+    perplexity_11 = float(np.exp(-np.mean(log_probs_5))) if len(log_probs_5) else np.nan
+    perplexity_15 = float(np.exp(-np.mean(log_probs_7))) if len(log_probs_7) else np.nan
+
+    return perplexity, perplexity_5, perplexity_11, perplexity_15
+
 def calculate_phrase_tangeniality(phrases_texts, utterance_text, sentence_encoder, lm_model, tokenizer):
     """
     ------------------------------------------------------------------------------------------------------
 
     This function calculates the semantic similarity of each phrase to the immediately preceding phrase,
-    the semantic similarity of each phrase to the phrase 2 turns before, and the Gemma-based perplexity of the turn.
+    the semantic similarity of each phrase to the phrase 2 turns before, and the model-based perplexity of the turn.
 
     Parameters:
     ...........
@@ -574,10 +902,10 @@ def calculate_phrase_tangeniality(phrases_texts, utterance_text, sentence_encode
         The full transcribed text.
     sentence_encoder: SentenceTransformer
         A SentenceTransformer model.
-    lm_model: AutoModelForCausalLM
-        A Gemma causal language model.
-    tokenizer: AutoTokenizer
-        A tokenizer paired with the causal language model.
+    lm_model: AutoModelForCausalLM | BertForMaskedLM
+        A language model for perplexity (Gemma or BERT depending on backend).
+    tokenizer: AutoTokenizer | BertTokenizer
+        A tokenizer paired with the language model.
 
     Returns:
     ...........
@@ -586,7 +914,7 @@ def calculate_phrase_tangeniality(phrases_texts, utterance_text, sentence_encode
     sentence_tangeniality2: float
         The semantic similarity of each phrase to the phrase 2 turns before.
     perplexity: float
-        The perplexity of the turn (global teacher-forced perplexity).
+        The perplexity of the turn (global teacher-forced for Gemma, pseudo-perplexity for BERT).
     perplexity_5: float
         The windowed perplexity of the turn with window size 2.
     perplexity_11: float
@@ -612,13 +940,20 @@ def calculate_phrase_tangeniality(phrases_texts, utterance_text, sentence_encode
 
     perplexity, perplexity_5, perplexity_11, perplexity_15 = np.nan, np.nan, np.nan, np.nan
     if tokenizer is not None and lm_model is not None:
-        max_len_model = int(getattr(lm_model.config, "max_position_embeddings", 32768))
-        perplexity, perplexity_5, perplexity_11, perplexity_15 = calculate_perplexity(
-            utterance_text,
-            lm_model,
-            tokenizer,
-            model_max_length=max_len_model,
-        )
+        if _get_backend() == "bert":
+            perplexity, perplexity_5, perplexity_11, perplexity_15 = calculate_perplexity_bert(
+                utterance_text,
+                lm_model,
+                tokenizer,
+            )
+        else:
+            max_len_model = int(getattr(lm_model.config, "max_position_embeddings", 32768))
+            perplexity, perplexity_5, perplexity_11, perplexity_15 = calculate_perplexity(
+                utterance_text,
+                lm_model,
+                tokenizer,
+                model_max_length=max_len_model,
+            )
 
     return sentence_tangeniality1, sentence_tangeniality2, perplexity, perplexity_5, perplexity_11, perplexity_15
 
@@ -668,14 +1003,35 @@ def init_model(language, measures):
     ...........
     sentence_encoder: SentenceTransformer
         A SentenceTransformer model.
-    tokenizer: AutoTokenizer
-        A tokenizer compatible with the Gemma causal language model.
-    lm_model: AutoModelForCausalLM
-        A Gemma causal language model.
+    tokenizer: AutoTokenizer | BertTokenizer
+        A tokenizer compatible with the selected backend.
+    lm_model: AutoModelForCausalLM | BertForMaskedLM
+        A language model for perplexity (Gemma or BERT).
 
     ------------------------------------------------------------------------------------------------------
     """
     sentence_encoder, tokenizer, lm_model = None, None, None
+
+    backend = _get_backend()
+    if backend == "bert":
+        bundle = get_bert_bundle(language, measures)
+        sentence_encoder = bundle.get("sentence_encoder")
+        tokenizer = bundle.get("tokenizer")
+        lm_model = bundle.get("mlm_model")
+
+        if sentence_encoder is None:
+            if language in measures.get("supported_langs_sentence_embeddings", set()):
+                logger.info(f"Sentence encoder is unavailable for language {language}.")
+            else:
+                logger.info(f"Language {language} not supported for phrase coherence analysis")
+
+        if tokenizer is None or lm_model is None:
+            if language in measures.get("supported_langs_bert", set()) or language in measures.get("english_langs", set()):
+                logger.info(f"BERT language model unavailable for language {language}.")
+            else:
+                logger.info(f"Language {language} not supported for perplexity analysis")
+
+        return sentence_encoder, tokenizer, lm_model
 
     bundle = get_model_bundle(language)
     sentence_encoder = bundle.get("sentence_encoder")

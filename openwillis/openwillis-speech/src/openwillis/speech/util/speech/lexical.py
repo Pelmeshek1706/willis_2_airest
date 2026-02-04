@@ -71,8 +71,8 @@ TAG_DICT_T = {
     "DT": "Determiner"}
 }
 
-FIRST_PERSON_PRONOUNS = ["I", "me", "my", "mine", "myself"]
-FIRST_PERSON_PRONOUNS_T = {'en' : {"I", "me", "my", "mine", "myself"},
+FIRST_PERSON_PRONOUNS = ["i", "me", "my", "mine", "myself"]
+FIRST_PERSON_PRONOUNS_T = {'en' : {"i", "me", "my", "mine", "myself", "i'm", "i'll", "i'd", "i've"},
                            'ua' : {"я", "мене", "мені", "мною", "мій", "моя", "мої", "моє"},
                            'uk' : {"я", "мене", "мені", "мною", "мій", "моя", "мої", "моє"},}
 PRESENT = ["VBP", "VBZ"]
@@ -89,7 +89,7 @@ class UkrSentimentAnalyzer:
     Ukrainian sentiment analysis model: YShynkarov/ukr-roberta-cosmus-sentiment
 
     Provides:
-      - polarity_scores(text) -> {"mixed","negative","neutral","positive"}
+      - polarity_scores(text) -> {"negative","neutral","positive","mixed"}
       - vader_polarity_scores(text) -> {"neg","neu","pos","compound"}  (VADER-like)
     """
 
@@ -141,20 +141,26 @@ class UkrSentimentAnalyzer:
     def old_polarity_scores(self, text: str) -> Dict[str, float]:
         results = self._pipe(text)  # list[list[{"label","score"}]]
         scores = {self.map_labels[it["label"]]: float(it["score"]) for it in results[0]}
-        for k in ("mixed", "negative", "neutral", "positive"):
-            scores.setdefault(k, 0.0)
-        return scores
+        return {
+            "negative": scores.get("negative", 0.0),
+            "neutral": scores.get("neutral", 0.0),
+            "positive": scores.get("positive", 0.0),
+            "compound": scores.get("mixed", 0.0),
+        }
 
     def _vader_normalize(self, x: float) -> float:
         # VADER normalization: x / sqrt(x^2 + alpha)
         return x / math.sqrt(x * x + self.compound_alpha)
 
     def polarity_scores(self, text: str) -> Dict[str, float]:
+        return self.old_polarity_scores(text)
+
+    def vader_polarity_scores(self, text: str) -> Dict[str, float]:
         s = self.polarity_scores(text)
         pos = s["positive"]
         neg = s["negative"]
         neu = s["neutral"]
-        mix = s["mixed"]
+        mix = s["compound"]
 
         # VADER-like pos/neg/neu proportions
         if self.split_mixed:

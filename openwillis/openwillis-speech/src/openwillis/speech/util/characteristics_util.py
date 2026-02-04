@@ -619,7 +619,18 @@ def filter_length(utterances, utterances_speaker, speaker_label, min_turn_length
 
     return utterances_filtered, utterances_speaker_filtered
 
-def process_language_feature(df_list, transcribe_info, speaker_label, min_turn_length, min_coherence_turn_length, language, time_index, option, measures):
+def process_language_feature(
+    df_list,
+    transcribe_info,
+    speaker_label,
+    min_turn_length,
+    min_coherence_turn_length,
+    language,
+    time_index,
+    option,
+    measures,
+    feature_groups=None,
+):
     """
     ------------------------------------------------------------------------------------------------------
 
@@ -644,6 +655,9 @@ def process_language_feature(df_list, transcribe_info, speaker_label, min_turn_l
     option: str
         Option for processing language features
          which to be processed
+    feature_groups: list[str] | set[str] | None
+        Optional feature group selector. When provided, only these groups are computed.
+        Supported groups: "pause", "repetition", "coherence", "sentiment", "first_person".
     measures: dict
         A dictionary containing the names of the columns in the output dataframes.
 
@@ -656,6 +670,20 @@ def process_language_feature(df_list, transcribe_info, speaker_label, min_turn_l
     """
     json_conf, utterances = transcribe_info
 
+    if feature_groups is None:
+        feature_groups = {"pause", "repetition", "coherence", "sentiment", "first_person"}
+    else:
+        if isinstance(feature_groups, str):
+            feature_groups = {feature_groups}
+        feature_groups = {str(f).strip().lower() for f in feature_groups if f}
+
+    want_pause = "pause" in feature_groups
+    want_repetition = "repetition" in feature_groups
+    want_coherence = "coherence" in feature_groups and option == "coherence"
+    # first_person relies on sentiment scores (pos/neg)
+    want_sentiment = "sentiment" in feature_groups or "first_person" in feature_groups
+    want_first_person = "first_person" in feature_groups
+
     # filter speaker in json_conf and utterances
     utterances_speaker, json_conf_speaker = filter_speaker(utterances, json_conf, None, measures)
     # create text list and turn indices
@@ -663,15 +691,19 @@ def process_language_feature(df_list, transcribe_info, speaker_label, min_turn_l
     # filter utterances with minimum length
     utterances_filtered, utterances_speaker_filtered = filter_length(utterances, utterances_speaker, speaker_label, min_turn_length, measures)
 
-    df_list = get_pause_feature(json_conf_speaker, df_list, text_list, turn_indices, measures, time_index, language)
-    df_list = get_repetitions(df_list, utterances_speaker, utterances_speaker_filtered, measures)
+    if want_pause:
+        df_list = get_pause_feature(json_conf_speaker, df_list, text_list, turn_indices, measures, time_index, language)
+    if want_repetition:
+        df_list = get_repetitions(df_list, utterances_speaker, utterances_speaker_filtered, measures)
 
-    if option == 'coherence':
+    if want_coherence:
         df_list = get_word_coherence(df_list, utterances_speaker, min_coherence_turn_length, language, measures)
         df_list = get_phrase_coherence(df_list, utterances_filtered, min_coherence_turn_length, speaker_label, language, measures)
 
     if language in measures["english_langs"] or language in ['uk', 'ua']:
-        df_list = get_sentiment(df_list, text_list, measures, lang=language)
-        df_list = get_pos_tag(df_list, text_list, measures, lang=language)
+        if want_sentiment:
+            df_list = get_sentiment(df_list, text_list, measures, lang=language)
+        if want_first_person:
+            df_list = get_pos_tag(df_list, text_list, measures, lang=language)
 
     return df_list
