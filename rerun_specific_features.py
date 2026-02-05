@@ -17,12 +17,12 @@ import pandas as pd
 
 from openwillis.speech.util.speech import coherence
 
-coherence.COHERENCE_BACKEND = "bert"   # or "gemma"
+coherence.COHERENCE_BACKEND = "gemma"   # or "gemma"
 print(f"Using coherence backend: {coherence.COHERENCE_BACKEND}")
-
-INPUT_DIR   = Path('/Users/pelmeshek1706/Desktop/projects/airest_notebooks/woz_end_whisper_test')
-OUTPUT_SOURCE_DIR = Path('/Users/pelmeshek1706/Desktop/projects/airest_notebooks/result_oppenwillis_eng_norm')
-OUTPUT_DIR  = Path('/Users/pelmeshek1706/Desktop/projects/airest_notebooks/result_oppenwillis_eng_norm_bert_updated')
+import torch; print("torch version - ", torch.__version__)
+INPUT_DIR   = Path('/Users/pelmeshek1706/Desktop/projects/airest_notebooks/woz_end_whisper_test_ukr')
+OUTPUT_SOURCE_DIR = Path('/Users/pelmeshek1706/Desktop/projects/airest_notebooks/result_oppenwillis_ukr_norm_gemma')
+OUTPUT_DIR  = Path('/Users/pelmeshek1706/Desktop/projects/airest_notebooks/result_oppenwillis_ukr_norm_gemma_updated_sentiment-5-2-26')
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -42,7 +42,7 @@ for json_file in tqdm(INPUT_DIR.glob('*.json')):
         words_new, turns_new, summary_new = ows.speech_characteristics(
             json_conf=transcript_json,
             option="simple",
-            language="en",
+            language="ua",
             speaker_label="SPEAKER_A",
             feature_groups=["sentiment", "first_person"],
         )

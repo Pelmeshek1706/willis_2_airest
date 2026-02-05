@@ -72,9 +72,20 @@ TAG_DICT_T = {
 }
 
 FIRST_PERSON_PRONOUNS = ["i", "me", "my", "mine", "myself"]
-FIRST_PERSON_PRONOUNS_T = {'en' : {"i", "me", "my", "mine", "myself", "i'm", "i'll", "i'd", "i've"},
-                           'ua' : {"я", "мене", "мені", "мною", "мій", "моя", "мої", "моє"},
-                           'uk' : {"я", "мене", "мені", "мною", "мій", "моя", "мої", "моє"},}
+FIRST_PERSON_PRONOUNS_T = {
+    'en': {"i", "me", "my", "mine", "myself", "i'm", "i'll", "i'd", "i've"},
+    # UA/UK: explicit first-person forms only (singular pronoun + singular possessive forms)
+    'ua': {
+        "я", "мене", "мені", "мною",
+        "мій", "моя", "моє", "мої",
+        "мого", "моєї", "моєму", "моїм", "моєю", "моїх", "моїми",
+    },
+    'uk': {
+        "я", "мене", "мені", "мною",
+        "мій", "моя", "моє", "мої",
+        "мого", "моєї", "моєму", "моїм", "моєю", "моїх", "моїми",
+    },
+}
 PRESENT = ["VBP", "VBZ"]
 PAST = ["VBD", "VBN"]
 
@@ -83,6 +94,119 @@ from huggingface_hub import hf_hub_download
 from safetensors.torch import load_file
 import math
 from typing import Dict, Tuple, Optional
+from transformers import (
+    AutoModelForSequenceClassification,
+    AutoTokenizer,
+    pipeline,
+)
+
+class EngSentimentAnalyzer:
+    """
+    English sentiment analysis model: j-hartmann/sentiment-roberta-large-english-3-classes
+
+    Provides:
+      - raw_polarity_scores(text) -> {"negative","neutral","positive","compound"}  (compound=0.0 placeholder)
+      - polarity_scores(text) -> {"neg","neu","pos","compound"}  (VADER-like)
+      - vader_polarity_scores(text) -> alias for polarity_scores(text)
+      - major_label(text) -> ("negative"|"neutral"|"positive", -1.0|0.0|1.0)
+    """
+
+    # This model already returns these string labels in the pipeline output.
+    map_labels = {
+        "negative": "negative",
+        "neutral": "neutral",
+        "positive": "positive",
+    }
+
+    int_label_map = {
+        "negative": -1.0,
+        "neutral": 0.0,
+        "positive": 1.0,
+    }
+
+    def __init__(
+        self,
+        device: int = -1,
+        compound_scale: float = 1.0,
+        compound_alpha: float = 15.0,  # VADER default alpha
+        model_id: str = "j-hartmann/sentiment-roberta-large-english-3-classes",
+    ):
+        self.compound_scale = float(compound_scale)
+        self.compound_alpha = float(compound_alpha)
+
+        tokenizer = AutoTokenizer.from_pretrained(model_id)
+        model = AutoModelForSequenceClassification.from_pretrained(model_id)
+        model.eval()
+
+        self._pipe = pipeline(
+            "text-classification",
+            model=model,
+            tokenizer=tokenizer,
+            device=device,
+            return_all_scores=True,
+            truncation=True,
+        )
+
+    def _vader_normalize(self, x: float) -> float:
+        # VADER normalization: x / sqrt(x^2 + alpha)
+        return x / math.sqrt(x * x + self.compound_alpha)
+
+    def raw_polarity_scores(self, text: str) -> Dict[str, float]:
+        """
+        Returns the model's 3-class probabilities as:
+        {"negative": p_neg, "neutral": p_neu, "positive": p_pos, "compound": 0.0}
+        """
+        results = self._pipe(text)  # list[list[{"label","score"}]]
+        scores = {it["label"].lower(): float(it["score"]) for it in results[0]}
+
+        neg = scores.get("negative", 0.0)
+        neu = scores.get("neutral", 0.0)
+        pos = scores.get("positive", 0.0)
+
+        return {"negative": neg, "neutral": neu, "positive": pos, "compound": 0.0}
+
+    # Backwards-compatible name vs your UA class
+    def polarity_scores(self, text: str) -> Dict[str, float]:
+        return self.raw_polarity_scores(text)
+
+    def default_polarity_scores(self, text: str) -> Dict[str, float]:
+        return self.raw_polarity_scores(text)
+
+    def vader_polarity_scores(self, text: str) -> Dict[str, float]:
+        """
+        VADER-like output:
+          - neg/neu/pos are proportions (sum ~ 1)
+          - compound is a normalized (pos - neg) score in [-1, 1]
+        """
+        s = self.default_polarity_scores(text)
+        pos = s["positive"]
+        neg = s["negative"]
+        neu = s["neutral"]
+
+        denom = pos + neg + neu
+        if denom > 0:
+            pos_v = pos / denom
+            neg_v = neg / denom
+            neu_v = neu / denom
+        else:
+            pos_v, neg_v, neu_v = 0.0, 0.0, 1.0
+
+        raw = self.compound_scale * (pos - neg)
+        compound = float(self._vader_normalize(raw))
+
+        return {"neg": float(neg_v), "neu": float(neu_v), "pos": float(pos_v), "compound": compound}
+
+    # def vader_polarity_scores(self, text: str) -> Dict[str, float]:
+    #     return self.polarity_scores(text)
+
+    def major_label(self, text: str) -> Tuple[str, float]:
+        """
+        Returns the winning class label among {negative, neutral, positive}
+        and its mapped numeric polarity (-1/0/1).
+        """
+        s = self.raw_polarity_scores(text)
+        label = max(("negative", "neutral", "positive"), key=lambda k: s[k])
+        return label, self.int_label_map[label]
 
 class UkrSentimentAnalyzer:
     """
@@ -152,11 +276,11 @@ class UkrSentimentAnalyzer:
         # VADER normalization: x / sqrt(x^2 + alpha)
         return x / math.sqrt(x * x + self.compound_alpha)
 
-    def polarity_scores(self, text: str) -> Dict[str, float]:
+    def default_polarity_scores(self, text: str) -> Dict[str, float]:
         return self.old_polarity_scores(text)
 
-    def vader_polarity_scores(self, text: str) -> Dict[str, float]:
-        s = self.polarity_scores(text)
+    def polarity_scores(self, text: str) -> Dict[str, float]:
+        s = self.default_polarity_scores(text)
         pos = s["positive"]
         neg = s["negative"]
         neu = s["neutral"]
@@ -257,13 +381,28 @@ def get_tag(word_df, word_list, measures, lang = 'en'):
     tag_list_pos = [tag[1] for tag in tag_list]
     word_df[measures["part_of_speech"]] = tag_list_pos
     # words['first_person']
-    word_df[measures["first_person"]] = [True if word.lower() in FIRST_PERSON_PRONOUNS_T[lang] else np.nan for word, pos, _ in tag_list]# [word in FIRST_PERSON_PRONOUNS_T[lang] for word in word_list]
-    # make non pronouns NaN
-    allowed_tags = ["Pronoun", "DET"]
-    word_df[measures["first_person"]] = word_df[measures["first_person"]].where(word_df[measures["part_of_speech"]].isin(allowed_tags), np.nan)
+    word_df[measures["first_person"]] = [
+        True if word.lower() in FIRST_PERSON_PRONOUNS_T[lang] else np.nan
+        for word, pos, _, _ in tag_list
+    ]  # [word in FIRST_PERSON_PRONOUNS_T[lang] for word in word_list]
+    # make non pronouns NaN (UA/UK: allow ADJ with Poss=Yes + Person=1)
+    allowed_tags = {"Pronoun", "DET"}
+    if lang in ['ua', 'uk']:
+        allow_mask = [
+            (pos in allowed_tags) or (pos == "Adjective" and poss_first_person)
+            for _, pos, _, poss_first_person in tag_list
+        ]
+        word_df[measures["first_person"]] = word_df[measures["first_person"]].where(allow_mask, np.nan)
+    else:
+        word_df[measures["first_person"]] = word_df[measures["first_person"]].where(
+            word_df[measures["part_of_speech"]].isin(allowed_tags), np.nan
+        )
     # word_df[measures["first_person"]] = word_df[measures["first_person"]].where(word_df[measures["part_of_speech"]] == "Pronoun", np.nan)
 
-    tag_list_verb = [verb_tense if pos == "Verb" else np.nan for _, pos, verb_tense in tag_list] # ["Present" if tag[1] in PRESENT else "Past" if tag[1] in PAST else "Other" for tag in tag_list]
+    tag_list_verb = [
+        verb_tense if pos == "Verb" else np.nan
+        for _, pos, verb_tense, _ in tag_list
+    ]  # ["Present" if tag[1] in PRESENT else "Past" if tag[1] in PAST else "Other" for tag in tag_list]
     word_df[measures["verb_tense"]] = tag_list_verb
     # make non verbs NaN
     word_df[measures["verb_tense"]] = word_df[measures["verb_tense"]].where(word_df[measures["part_of_speech"]] == "Verb", np.nan)
@@ -475,7 +614,7 @@ def count_space_tokens(text, lang='en'):
 
 def get_tag_l(full_text, lang='en'):
     """
-    Returns a list of tuples (text, pos, verb_tense).
+    Returns a list of tuples (text, pos, verb_tense, poss_first_person).
     If given a list, produce exactly one tag per input element to keep
     alignment with word_df rows.
     """
@@ -483,6 +622,15 @@ def get_tag_l(full_text, lang='en'):
         nlp = spacy.load("uk_core_news_sm")
     else:
         nlp = spacy.load("en_core_web_sm")
+
+    def _is_possessive_first_person(token, lang_code):
+        if token is None or lang_code not in ['ua', 'uk']:
+            return False
+        poss_vals = token.morph.get("Poss")
+        person_vals = token.morph.get("Person")
+        if not poss_vals or not person_vals:
+            return False
+        return ("Yes" in poss_vals) and ("1" in person_vals)
 
     tags = []
 
@@ -497,6 +645,7 @@ def get_tag_l(full_text, lang='en'):
                 # No token produced (e.g., empty/space-only). Mark as Other/None keeping alignment
                 pos = "Other"
                 verb_tense = None
+                poss_first_person = False
                 text = w
             else:
                 text = token.text
@@ -523,7 +672,8 @@ def get_tag_l(full_text, lang='en'):
                         verb_tense = "Past"
                     else:
                         verb_tense = "Other"
-            tags.append((text, pos, verb_tense))
+                poss_first_person = _is_possessive_first_person(token, lang)
+            tags.append((text, pos, verb_tense, poss_first_person))
         return tags
 
     # If given a single string, process as a whole and filter out SPACE tokens
@@ -554,7 +704,8 @@ def get_tag_l(full_text, lang='en'):
                 verb_tense = "Past"
             else:
                 verb_tense = "Other"
-        tags.append((token.text, pos, verb_tense))
+        poss_first_person = _is_possessive_first_person(token, lang)
+        tags.append((token.text, pos, verb_tense, poss_first_person))
 
     return tags
 
@@ -625,8 +776,8 @@ def get_sentiment(df_list, text_list, measures, lang='en'):
         word_df, turn_df, summ_df = df_list
         _, turn_list, full_text = text_list
         lemmatizer = spacy.load("uk_core_news_sm") if lang in ['ua', 'uk'] else spacy.load('en_core_web_sm') # should be changed to normal model
-        
-        sentiment = SentimentIntensityAnalyzer() if lang == 'en' else UkrSentimentAnalyzer(compound_scale=4.0, compound_alpha=15.0, split_mixed=True)
+        # SentimentIntensityAnalyzer()
+        sentiment = EngSentimentAnalyzer(compound_scale=4.0, compound_alpha=15.0) if lang == 'en' else UkrSentimentAnalyzer(compound_scale=4.0, compound_alpha=15.0, split_mixed=True)
         cols = [measures["neg"], measures["neu"], measures["pos"], measures["compound"], measures["speech_mattr_5"], measures["speech_mattr_10"], measures["speech_mattr_25"], measures["speech_mattr_50"], measures["speech_mattr_100"]]
 
         for idx, u in enumerate(turn_list):
