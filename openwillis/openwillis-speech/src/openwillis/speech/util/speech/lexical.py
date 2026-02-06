@@ -100,18 +100,62 @@ from transformers import (
     pipeline,
 )
 
+import math
+from typing import Dict, Tuple, Optional
+
+import torch
+import torch.nn.functional as F
+
+
+import math
+from typing import Dict, Tuple, List, Any
+
+from transformers import AutoTokenizer, AutoModelForSequenceClassification, pipeline
+
+
+def _normalize_pipeline_scores(pipe_out: Any) -> List[Dict[str, Any]]:
+    """
+    Normalize HF text-classification outputs to a list of {"label","score"} dicts.
+    Handles single vs batch shapes and return_all_scores variations.
+    """
+    if pipe_out is None:
+        return []
+
+    if isinstance(pipe_out, dict):
+        if "label" in pipe_out and "score" in pipe_out:
+            return [pipe_out]
+        # If already a label->score mapping, convert it.
+        return [
+            {"label": k, "score": v}
+            for k, v in pipe_out.items()
+            if isinstance(v, (int, float))
+        ]
+
+    if isinstance(pipe_out, list):
+        if not pipe_out:
+            return []
+        first = pipe_out[0]
+        if isinstance(first, list):
+            return _normalize_pipeline_scores(first)
+        if isinstance(first, dict):
+            return pipe_out
+
+    return []
+
+
 class EngSentimentAnalyzer:
     """
     English sentiment analysis model: j-hartmann/sentiment-roberta-large-english-3-classes
 
     Provides:
       - raw_polarity_scores(text) -> {"negative","neutral","positive","compound"}  (compound=0.0 placeholder)
-      - polarity_scores(text) -> {"neg","neu","pos","compound"}  (VADER-like)
-      - vader_polarity_scores(text) -> alias for polarity_scores(text)
+      - polarity_scores(text) -> {"negative","neutral","positive","compound"}  (alias)
+      - vader_polarity_scores(text) -> {"neg","neu","pos","compound"}  (VADER-like)
       - major_label(text) -> ("negative"|"neutral"|"positive", -1.0|0.0|1.0)
+
+    NOTE: This implementation auto-handles long texts via sliding-window aggregation.
     """
 
-    # This model already returns these string labels in the pipeline output.
     map_labels = {
         "negative": "negative",
         "neutral": "neutral",
@@ -130,42 +174,222 @@ class EngSentimentAnalyzer:
         compound_scale: float = 1.0,
         compound_alpha: float = 15.0,  # VADER default alpha
         model_id: str = "j-hartmann/sentiment-roberta-large-english-3-classes",
+        # long-text settings (can be overridden per-call too)
+        max_length: int = 512,
+        stride: int = 128,
+        min_chunk_tokens: int = 16,
     ):
         self.compound_scale = float(compound_scale)
         self.compound_alpha = float(compound_alpha)
 
-        tokenizer = AutoTokenizer.from_pretrained(model_id)
+        self._tokenizer = AutoTokenizer.from_pretrained(model_id)
         model = AutoModelForSequenceClassification.from_pretrained(model_id)
         model.eval()
 
         self._pipe = pipeline(
             "text-classification",
             model=model,
-            tokenizer=tokenizer,
+            tokenizer=self._tokenizer,
             device=device,
             return_all_scores=True,
-            truncation=True,
+            truncation=False,  # keep False; we handle long texts ourselves
         )
 
+        self._max_length = int(max_length)
+        self._stride = int(stride)
+        self._min_chunk_tokens = int(min_chunk_tokens)
+
     def _vader_normalize(self, x: float) -> float:
-        # VADER normalization: x / sqrt(x^2 + alpha)
         return x / math.sqrt(x * x + self.compound_alpha)
 
+    # -------------------------
+    # Sliding-window long-text
+    # -------------------------
+    def _iter_token_windows(
+        self,
+        input_ids: List[int],
+        window_tokens: int,
+        stride: int,
+        min_chunk_tokens: int,
+    ) -> List[Tuple[int, int]]:
+        """
+        Returns [(start, end), ...] over token ids (no special tokens).
+        window_tokens: max tokens per chunk (excluding special tokens).
+        stride: overlap in tokens between consecutive chunks.
+        """
+        n = len(input_ids)
+        if n == 0:
+            return [(0, 0)]
+
+        window_tokens = max(1, int(window_tokens))
+        stride = max(0, int(stride))
+        step = max(1, window_tokens - stride)
+
+        spans: List[Tuple[int, int]] = []
+        start = 0
+        while start < n:
+            end = min(start + window_tokens, n)
+            if (end - start) >= min_chunk_tokens or start == 0:
+                spans.append((start, end))
+            if end >= n:
+                break
+            start += step
+
+        # Ensure at least one span
+        if not spans:
+            spans = [(0, min(window_tokens, n))]
+        return spans
+
+    def _half_overlap_weights(self, spans: List[Tuple[int, int]]) -> List[float]:
+        """
+        Weight each chunk by its non-overlapped contribution using half-overlap rule:
+          weight = len(chunk) - 0.5*overlap_with_prev - 0.5*overlap_with_next
+        This reduces double counting when stride>0.
+        """
+        if not spans:
+            return []
+
+        weights: List[float] = []
+        for i, (s, e) in enumerate(spans):
+            length = float(max(0, e - s))
+            overlap_prev = 0.0
+            overlap_next = 0.0
+
+            if i > 0:
+                ps, pe = spans[i - 1]
+                overlap_prev = float(max(0, min(pe, e) - max(ps, s)))
+            if i + 1 < len(spans):
+                ns, ne = spans[i + 1]
+                overlap_next = float(max(0, min(ne, e) - max(ns, s)))
+
+            w = length - 0.5 * overlap_prev - 0.5 * overlap_next
+            weights.append(max(0.0, w))
+
+        # Fallback: if all weights are zero (can happen in degenerate cases), use uniform weights
+        if sum(weights) <= 0.0:
+            return [1.0] * len(spans)
+        return weights
+
+    def raw_polarity_scores_sliding(
+        self,
+        text: str,
+        *,
+        max_length: int | None = None,
+        stride: int | None = None,
+        min_chunk_tokens: int | None = None,
+    ) -> Dict[str, float]:
+        """
+        Long-text handling: tokenize without special tokens, split into overlapping windows,
+        run the classifier on each chunk, then aggregate probabilities with overlap-aware weights.
+        """
+        if text is None or not str(text).strip():
+            return {"negative": 0.0, "neutral": 1.0, "positive": 0.0, "compound": 0.0}
+
+        tok = self._tokenizer
+
+        # Model max length is typically 512; we reserve space for special tokens added by the pipeline.
+        max_len = int(max_length if max_length is not None else self._max_length)
+        special = int(tok.num_special_tokens_to_add(pair=False))
+        window_tokens = max(1, max_len - special)
+
+        stride_val = int(stride if stride is not None else self._stride)
+        min_tokens = int(min_chunk_tokens if min_chunk_tokens is not None else self._min_chunk_tokens)
+
+        # Tokenize full text (no special tokens) so we can window precisely
+        input_ids = tok.encode(text, add_special_tokens=False)
+
+        # Build spans + decode each chunk back to text for the pipeline
+        spans = self._iter_token_windows(
+            input_ids=input_ids,
+            window_tokens=window_tokens,
+            stride=stride_val,
+            min_chunk_tokens=min_tokens,
+        )
+        chunk_texts: List[str] = []
+        for s, e in spans:
+            chunk_ids = input_ids[s:e]
+            chunk_texts.append(
+                tok.decode(
+                    chunk_ids,
+                    skip_special_tokens=True,
+                    clean_up_tokenization_spaces=True,
+                )
+            )
+
+        # Batch inference (pipeline supports list input)
+        results = self._pipe(chunk_texts)  # -> list[list[{"label","score"}]]
+
+        # Aggregate with overlap-aware weights
+        weights = self._half_overlap_weights(spans)
+        wsum = float(sum(weights))
+
+        neg_sum = 0.0
+        neu_sum = 0.0
+        pos_sum = 0.0
+
+        for w, res in zip(weights, results):
+            items = _normalize_pipeline_scores(res)
+            scores = {
+                str(it.get("label", "")).lower(): float(it["score"])
+                for it in items
+                if isinstance(it, dict) and "label" in it and "score" in it
+            }
+            neg_sum += w * scores.get("negative", 0.0)
+            neu_sum += w * scores.get("neutral", 0.0)
+            pos_sum += w * scores.get("positive", 0.0)
+
+        if wsum <= 0.0:
+            return {"negative": 0.0, "neutral": 1.0, "positive": 0.0, "compound": 0.0}
+
+        neg = neg_sum / wsum
+        neu = neu_sum / wsum
+        pos = pos_sum / wsum
+
+        return {"negative": float(neg), "neutral": float(neu), "positive": float(pos), "compound": 0.0}
+
+    # -------------------------
+    # Original API, now robust
+    # -------------------------
     def raw_polarity_scores(self, text: str) -> Dict[str, float]:
         """
-        Returns the model's 3-class probabilities as:
-        {"negative": p_neg, "neutral": p_neu, "positive": p_pos, "compound": 0.0}
+        Returns:
+          {"negative": p_neg, "neutral": p_neu, "positive": p_pos, "compound": 0.0}
+
+        If the text is longer than model limit (or throws the known RuntimeError),
+        automatically falls back to sliding-window processing.
         """
-        results = self._pipe(text)  # list[list[{"label","score"}]]
-        scores = {it["label"].lower(): float(it["score"]) for it in results[0]}
+        if text is None or not str(text).strip():
+            return {"negative": 0.0, "neutral": 1.0, "positive": 0.0, "compound": 0.0}
 
-        neg = scores.get("negative", 0.0)
-        neu = scores.get("neutral", 0.0)
-        pos = scores.get("positive", 0.0)
+        # Fast pre-check: if token length is too large, go sliding window directly
+        tok = self._tokenizer
+        max_len = int(self._max_length)
+        special = int(tok.num_special_tokens_to_add(pair=False))
+        window_tokens = max(1, max_len - special)
 
-        return {"negative": neg, "neutral": neu, "positive": pos, "compound": 0.0}
+        try:
+            ids = tok.encode(text, add_special_tokens=False)
+            if len(ids) > window_tokens:
+                return self.raw_polarity_scores_sliding(text)
 
-    # Backwards-compatible name vs your UA class
+            results = self._pipe(text)  # list[list[{"label","score"}]]
+            items = _normalize_pipeline_scores(results)
+            scores = {
+                str(it.get("label", "")).lower(): float(it["score"])
+                for it in items
+                if isinstance(it, dict) and "label" in it and "score" in it
+            }
+
+            neg = scores.get("negative", 0.0)
+            neu = scores.get("neutral", 0.0)
+            pos = scores.get("positive", 0.0)
+
+            return {"negative": neg, "neutral": neu, "positive": pos, "compound": 0.0}
+
+        except RuntimeError as e:
+            # Handles the typical "expanded size ... must match ... 514" error for long sequences
+            return self.raw_polarity_scores_sliding(text)
+
     def polarity_scores(self, text: str) -> Dict[str, float]:
         return self.raw_polarity_scores(text)
 
@@ -173,11 +397,6 @@ class EngSentimentAnalyzer:
         return self.raw_polarity_scores(text)
 
     def vader_polarity_scores(self, text: str) -> Dict[str, float]:
-        """
-        VADER-like output:
-          - neg/neu/pos are proportions (sum ~ 1)
-          - compound is a normalized (pos - neg) score in [-1, 1]
-        """
         s = self.default_polarity_scores(text)
         pos = s["positive"]
         neg = s["negative"]
@@ -196,25 +415,33 @@ class EngSentimentAnalyzer:
 
         return {"neg": float(neg_v), "neu": float(neu_v), "pos": float(pos_v), "compound": compound}
 
-    # def vader_polarity_scores(self, text: str) -> Dict[str, float]:
-    #     return self.polarity_scores(text)
-
     def major_label(self, text: str) -> Tuple[str, float]:
-        """
-        Returns the winning class label among {negative, neutral, positive}
-        and its mapped numeric polarity (-1/0/1).
-        """
         s = self.raw_polarity_scores(text)
         label = max(("negative", "neutral", "positive"), key=lambda k: s[k])
         return label, self.int_label_map[label]
+
+import math
+from typing import Dict, Tuple, List
+
+from huggingface_hub import hf_hub_download
+from safetensors.torch import load_file
+from transformers import (
+    RobertaConfig,
+    RobertaTokenizer,
+    RobertaForSequenceClassification,
+    pipeline,
+)
+
 
 class UkrSentimentAnalyzer:
     """
     Ukrainian sentiment analysis model: YShynkarov/ukr-roberta-cosmus-sentiment
 
     Provides:
-      - polarity_scores(text) -> {"negative","neutral","positive","mixed"}
-      - vader_polarity_scores(text) -> {"neg","neu","pos","compound"}  (VADER-like)
+      - old_polarity_scores(text) -> {"negative","neutral","positive","compound"(=mixed)}
+      - default_polarity_scores(text) -> same as old_polarity_scores (now long-text safe)
+      - polarity_scores(text) -> {"neg","neu","pos","compound"}  (VADER-like)
+      - major_label(text) -> ("negative"|"neutral"|"positive"|"mixed", -1|0|1)
     """
 
     map_labels = {
@@ -237,13 +464,20 @@ class UkrSentimentAnalyzer:
         compound_scale: float = 1.0,
         compound_alpha: float = 15.0,   # VADER default alpha
         split_mixed: bool = True,
+        # long-text defaults
+        max_length: int = 512,
+        stride: int = 64,
+        min_chunk_tokens: int = 16,
     ):
         self.compound_scale = float(compound_scale)
         self.compound_alpha = float(compound_alpha)
         self.split_mixed = bool(split_mixed)
 
         repo_id = "YShynkarov/ukr-roberta-cosmus-sentiment"
-        safetensor = hf_hub_download(repo_id=repo_id, filename="ukrroberta_cosmus_sentiment.safetensors")
+        safetensor = hf_hub_download(
+            repo_id=repo_id,
+            filename="ukrroberta_cosmus_sentiment.safetensors",
+        )
 
         config = RobertaConfig.from_pretrained("youscan/ukr-roberta-base", num_labels=4)
         tokenizer = RobertaTokenizer.from_pretrained("youscan/ukr-roberta-base")
@@ -253,40 +487,208 @@ class UkrSentimentAnalyzer:
         model.load_state_dict(state_dict)
         model.eval()
 
+        self._tokenizer = tokenizer
         self._pipe = pipeline(
             "text-classification",
             model=model,
             tokenizer=tokenizer,
             device=device,
-            return_all_scores=True,
-            truncation=True,
+            top_k=None,
+            truncation=False,  # keep False; we handle long texts ourselves
         )
 
-    def old_polarity_scores(self, text: str) -> Dict[str, float]:
-        results = self._pipe(text)  # list[list[{"label","score"}]]
-        scores = {self.map_labels[it["label"]]: float(it["score"]) for it in results[0]}
-        return {
-            "negative": scores.get("negative", 0.0),
-            "neutral": scores.get("neutral", 0.0),
-            "positive": scores.get("positive", 0.0),
-            "compound": scores.get("mixed", 0.0),
-        }
+        self._max_length = int(max_length)
+        self._stride = int(stride)
+        self._min_chunk_tokens = int(min_chunk_tokens)
 
     def _vader_normalize(self, x: float) -> float:
-        # VADER normalization: x / sqrt(x^2 + alpha)
         return x / math.sqrt(x * x + self.compound_alpha)
 
+    # -------------------------
+    # Sliding-window helpers
+    # -------------------------
+    def _iter_token_windows(
+        self,
+        input_ids: List[int],
+        window_tokens: int,
+        stride: int,
+        min_chunk_tokens: int,
+    ) -> List[Tuple[int, int]]:
+        n = len(input_ids)
+        if n == 0:
+            return [(0, 0)]
+
+        window_tokens = max(1, int(window_tokens))
+        stride = max(0, int(stride))
+        step = max(1, window_tokens - stride)
+
+        spans: List[Tuple[int, int]] = []
+        start = 0
+        while start < n:
+            end = min(start + window_tokens, n)
+            if (end - start) >= min_chunk_tokens or start == 0:
+                spans.append((start, end))
+            if end >= n:
+                break
+            start += step
+
+        if not spans:
+            spans = [(0, min(window_tokens, n))]
+        return spans
+
+    def _half_overlap_weights(self, spans: List[Tuple[int, int]]) -> List[float]:
+        if not spans:
+            return []
+
+        weights: List[float] = []
+        for i, (s, e) in enumerate(spans):
+            length = float(max(0, e - s))
+            overlap_prev = 0.0
+            overlap_next = 0.0
+
+            if i > 0:
+                ps, pe = spans[i - 1]
+                overlap_prev = float(max(0, min(pe, e) - max(ps, s)))
+            if i + 1 < len(spans):
+                ns, ne = spans[i + 1]
+                overlap_next = float(max(0, min(ne, e) - max(ns, s)))
+
+            w = length - 0.5 * overlap_prev - 0.5 * overlap_next
+            weights.append(max(0.0, w))
+
+        if sum(weights) <= 0.0:
+            return [1.0] * len(spans)
+        return weights
+
+    def polarity_scores_sliding(
+        self,
+        text: str,
+        *,
+        max_length: int | None = None,
+        stride: int | None = None,
+        min_chunk_tokens: int | None = None,
+    ) -> Dict[str, float]:
+        """
+        Sliding-window version of old_polarity_scores (returns mixed under "compound").
+        Aggregates per-chunk class probabilities with overlap-aware weights.
+        """
+        if text is None or not str(text).strip():
+            return {"negative": 0.0, "neutral": 1.0, "positive": 0.0, "compound": 0.0}
+
+        tok = self._tokenizer
+
+        max_len = int(max_length if max_length is not None else self._max_length)
+        special = int(tok.num_special_tokens_to_add(pair=False))
+        window_tokens = max(1, max_len - special)
+
+        stride_val = int(stride if stride is not None else self._stride)
+        min_tokens = int(min_chunk_tokens if min_chunk_tokens is not None else self._min_chunk_tokens)
+
+        input_ids = tok.encode(text, add_special_tokens=False)
+
+        spans = self._iter_token_windows(
+            input_ids=input_ids,
+            window_tokens=window_tokens,
+            stride=stride_val,
+            min_chunk_tokens=min_tokens,
+        )
+
+        chunk_texts: List[str] = []
+        for s, e in spans:
+            chunk_ids = input_ids[s:e]
+            chunk_texts.append(
+                tok.decode(
+                    chunk_ids,
+                    skip_special_tokens=True,
+                    clean_up_tokenization_spaces=True,
+                )
+            )
+
+        results = self._pipe(chunk_texts)  # list[list[{"label","score"}]]
+        weights = self._half_overlap_weights(spans)
+        wsum = float(sum(weights))
+
+        neg_sum = 0.0
+        neu_sum = 0.0
+        pos_sum = 0.0
+        mix_sum = 0.0
+
+        for w, res in zip(weights, results):
+            items = _normalize_pipeline_scores(res)
+            mapped = {}
+            for it in items:
+                if not isinstance(it, dict) or "label" not in it or "score" not in it:
+                    continue
+                label = str(it.get("label", ""))
+                mapped_label = self.map_labels.get(label, label.lower())
+                mapped[mapped_label] = float(it["score"])
+            neg_sum += w * mapped.get("negative", 0.0)
+            neu_sum += w * mapped.get("neutral", 0.0)
+            pos_sum += w * mapped.get("positive", 0.0)
+            mix_sum += w * mapped.get("mixed", 0.0)
+
+        if wsum <= 0.0:
+            return {"negative": 0.0, "neutral": 1.0, "positive": 0.0, "compound": 0.0}
+
+        return {
+            "negative": float(neg_sum / wsum),
+            "neutral": float(neu_sum / wsum),
+            "positive": float(pos_sum / wsum),
+            "compound": float(mix_sum / wsum),  # keep same behavior: mixed stored in "compound"
+        }
+
+    # -------------------------
+    # Original API, now robust
+    # -------------------------
     def default_polarity_scores(self, text: str) -> Dict[str, float]:
-        return self.old_polarity_scores(text)
+        """
+        Original single-pass behavior, but now auto-falls back to sliding window
+        when text is too long or the model throws the long-seq RuntimeError.
+        """
+        if text is None or not str(text).strip():
+            return {"negative": 0.0, "neutral": 1.0, "positive": 0.0, "compound": 0.0}
+
+        tok = self._tokenizer
+        max_len = int(self._max_length)
+        special = int(tok.num_special_tokens_to_add(pair=False))
+        window_tokens = max(1, max_len - special)
+
+        try:
+            ids = tok.encode(text, add_special_tokens=False)
+            if len(ids) > window_tokens:
+                return self.polarity_scores_sliding(text)
+
+            results = self._pipe(text)  # list[list[{"label","score"}]]
+            items = _normalize_pipeline_scores(results)
+            scores = {}
+            for it in items:
+                if not isinstance(it, dict) or "label" not in it or "score" not in it:
+                    continue
+                label = str(it.get("label", ""))
+                mapped_label = self.map_labels.get(label, label.lower())
+                scores[mapped_label] = float(it["score"])
+            return {
+                "negative": scores.get("negative", 0.0),
+                "neutral": scores.get("neutral", 0.0),
+                "positive": scores.get("positive", 0.0),
+                "compound": scores.get("mixed", 0.0),
+            }
+        except RuntimeError:
+            return self.polarity_scores_sliding(text)
 
     def polarity_scores(self, text: str) -> Dict[str, float]:
+        return self.default_polarity_scores(text)
+
+    def vader_polarity_scores(self, text: str) -> Dict[str, float]:
+        """
+        VADER-like output using (possibly sliding-window aggregated) base probs.
+        """
         s = self.default_polarity_scores(text)
         pos = s["positive"]
         neg = s["negative"]
         neu = s["neutral"]
-        mix = s["compound"]
+        mix = s["compound"]  # mixed
 
-        # VADER-like pos/neg/neu proportions
         if self.split_mixed:
             pos_v = pos + 0.5 * mix
             neg_v = neg + 0.5 * mix
@@ -308,9 +710,19 @@ class UkrSentimentAnalyzer:
         return {"neg": float(neg_v), "neu": float(neu), "pos": float(pos_v), "compound": compound}
 
     def major_label(self, text: str) -> Tuple[str, float]:
-        scores = self.polarity_scores(text)
-        best = max(scores, key=scores.get)
-        return best, self.int_label_map[best]
+        """
+        Pick winning label among the *base* classes (negative/neutral/positive/mixed).
+        Uses the underlying probability distribution (sliding-window safe).
+        """
+        base = self.default_polarity_scores(text)
+        base4 = {
+            "negative": base["negative"],
+            "neutral": base["neutral"],
+            "positive": base["positive"],
+            "mixed": base["compound"],
+        }
+        label = max(base4, key=base4.get)
+        return label, self.int_label_map[label]
 
 
 def get_mattr(text, lemmatizer, window_size=50):
