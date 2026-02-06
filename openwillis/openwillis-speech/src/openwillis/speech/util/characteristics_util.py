@@ -305,50 +305,49 @@ def filter_json_transcribe_aws(item_data, measures):
     return filter_json
 
 def create_turns_whisper(item_data, measures):
-    """
-    ------------------------------------------------------------------------------------------------------
-
-    This function creates a dataframe of turns from the JSON response object for Whisper.
-
-    Parameters:
-    ...........
-    item_data: dict
-        JSON response object.
-    measures: dict
-        A dictionary containing the names of the columns in the output dataframes.
-
-    Returns:
-    ...........
-    utterances: pandas dataframe
-        A dataframe containing the turns extracted from the JSON object,
-            along with word, phrase and utterance indices and texts.
-
-    ------------------------------------------------------------------------------------------------------
-    """
-
     data = []
+    has_speaker = any(("speaker" in s and s["speaker"] is not None) for s in item_data)
+
+    if not has_speaker:
+        # Каждый сегмент = отдельный turn
+        for item in item_data:
+            idxs = [w[measures["old_index"]] for w in item.get("words", []) if "start" in w]
+            if not idxs:
+                continue
+            text = (item.get("text") or "").strip()
+            data.append({
+                measures['utterance_ids']: (idxs[0], idxs[-1]),
+                measures['utterance_text']: text,
+                measures['phrases_ids']: [(idxs[0], idxs[-1])],
+                measures['phrases_texts']: [text],
+                measures['words_ids']: idxs,
+                measures['words_texts']: [w['word'] for w in item.get('words', []) if 'start' in w],
+                measures['speaker_label']: item.get('speaker')
+            })
+        return pd.DataFrame(data)
+
+    # Диаризация: группировка по speaker
     current_speaker = None
     aggregated_text = ""
     aggregated_ids = []
     word_ids, word_texts = [], []
     phrase_ids, phrase_texts = [], []
-    
-    for item in item_data:
-        if current_speaker == current_speaker: #if item['speaker'] == current_speaker:
-            idxs = [word[measures["old_index"]] for word in item['words'] if 'start' in word]
-            # Continue aggregating text and ids for the current speaker
-            aggregated_text += " " + item['text']
-            aggregated_ids.extend(idxs)
 
+    for item in item_data:
+        speaker = item.get("speaker")
+        idxs = [w[measures["old_index"]] for w in item.get("words", []) if "start" in w]
+        text = (item.get("text") or "").strip()
+
+        if speaker == current_speaker:
+            aggregated_text += " " + text
+            aggregated_ids.extend(idxs)
             word_ids.extend(idxs)
-            word_texts.extend([word['word'] for word in item['words'] if 'start' in word])
+            word_texts.extend([w['word'] for w in item.get('words', []) if 'start' in w])
             if idxs:
                 phrase_ids.append((idxs[0], idxs[-1]))
-                phrase_texts.append(item['text'])
-
+                phrase_texts.append(text)
         else:
-            # If the speaker changes, save the current aggregation (if it exists) and start new aggregation
-            if aggregated_ids:  # Check to ensure it's not the first item
+            if aggregated_ids:
                 data.append({
                     measures['utterance_ids']: (aggregated_ids[0], aggregated_ids[-1]),
                     measures['utterance_text']: aggregated_text.strip(),
@@ -358,19 +357,15 @@ def create_turns_whisper(item_data, measures):
                     measures['words_texts']: word_texts,
                     measures['speaker_label']: current_speaker
                 })
-            
-            # Reset aggregation for the new speaker
-            current_speaker = item['speaker']
-            aggregated_text = item['text']
-            aggregated_ids = [word[measures["old_index"]] for word in item['words'] if 'start' in word]
 
-            word_ids = [word[measures["old_index"]] for word in item['words'] if 'start' in word]
-            word_texts = [word['word'] for word in item['words'] if 'start' in word]
+            current_speaker = speaker
+            aggregated_text = text
+            aggregated_ids = idxs.copy()
+            word_ids = idxs.copy()
+            word_texts = [w['word'] for w in item.get('words', []) if 'start' in w]
+            phrase_ids = [(idxs[0], idxs[-1])] if idxs else []
+            phrase_texts = [text] if idxs else []
 
-            phrase_ids = [(word_ids[0], word_ids[-1])]
-            phrase_texts = [item['text']]
-    
-    # Don't forget to add the last aggregated utterance
     if aggregated_ids:
         data.append({
             measures['utterance_ids']: (aggregated_ids[0], aggregated_ids[-1]),
