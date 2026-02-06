@@ -6,12 +6,12 @@ import gc
 import logging
 import math
 import re
+from collections import OrderedDict
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
 from sentence_transformers import SentenceTransformer
-from sklearn.metrics.pairwise import cosine_similarity
 from transformers import AutoModelForCausalLM, AutoTokenizer, BertTokenizer, BertModel, BertForMaskedLM
 from huggingface_hub import login
 import os
@@ -48,6 +48,9 @@ EMBEDDING_BATCH_SIZE = 256
 WINDOW_BATCH_SIZE = 512
 MIN_EMBEDDING_BATCH_SIZE = 8
 WORD_STREAM_CHUNK_SIZE = 32
+TOKEN_CACHE_SIZE = int(os.getenv("OPENWILLIS_TOKEN_CACHE_SIZE", "512"))
+_PPL_TOKEN_CACHE: "OrderedDict[str, torch.Tensor]" = OrderedDict()
+_BERT_TOKEN_CACHE: "OrderedDict[str, torch.Tensor]" = OrderedDict()
 
 
 def _select_torch_device(explicit: Optional[str] = None) -> torch.device:
@@ -77,6 +80,98 @@ def _maybe_enable_tf32(device: torch.device) -> None:
 
 _MODEL_CACHE: Dict[str, Dict[str, object]] = {}
 _BERT_CACHE: Dict[str, Dict[str, object]] = {}
+
+
+def _cache_get(cache: "OrderedDict[str, torch.Tensor]", key: str) -> Optional[torch.Tensor]:
+    value = cache.get(key)
+    if value is not None:
+        cache.move_to_end(key)
+    return value
+
+
+def _cache_put(cache: "OrderedDict[str, torch.Tensor]", key: str, value: torch.Tensor) -> None:
+    cache[key] = value
+    cache.move_to_end(key)
+    while len(cache) > TOKEN_CACHE_SIZE:
+        cache.popitem(last=False)
+
+
+def _normalize_embeddings(embeddings: np.ndarray) -> np.ndarray:
+    arr = np.asarray(embeddings, dtype=np.float32)
+    if arr.ndim != 2 or arr.shape[0] == 0:
+        return np.zeros((0, 0), dtype=np.float32)
+    norms = np.linalg.norm(arr, axis=1, keepdims=True)
+    norms = np.where(norms == 0, 1.0, norms)
+    return arr / norms
+
+
+def _cosine_for_offset(normalized_embeddings: np.ndarray, k: int) -> np.ndarray:
+    if k <= 0:
+        raise ValueError("k must be > 0")
+    n = normalized_embeddings.shape[0]
+    if n <= k:
+        return np.zeros((0,), dtype=np.float32)
+    return np.einsum("ij,ij->i", normalized_embeddings[:-k], normalized_embeddings[k:]).astype(np.float32)
+
+
+def _word_coherence_from_embeddings(word_embeddings: np.ndarray) -> Tuple[List[float], List[float], List[float], Dict[int, List[float]]]:
+    normalized = _normalize_embeddings(word_embeddings)
+    n = int(normalized.shape[0])
+    if n == 0:
+        empty_var = {k: [] for k in range(2, 11)}
+        return [], [], [], empty_var
+
+    offsets = {k: _cosine_for_offset(normalized, k) for k in range(1, 11)}
+
+    word_coherence: List[float] = [np.nan] * n
+    if n > 1:
+        word_coherence[1:] = offsets[1].tolist()
+
+    word_coherence_5: List[float] = [np.nan] * n
+    if n > 5:
+        for j in range(2, n - 2):
+            total = 1.0
+            total += float(offsets[1][j - 1]) + float(offsets[1][j])
+            total += float(offsets[2][j - 2]) + float(offsets[2][j])
+            word_coherence_5[j] = total / 5.0
+
+    word_coherence_10: List[float] = [np.nan] * n
+    if n > 10:
+        for j in range(5, n - 5):
+            total = 1.0
+            for d in range(1, 6):
+                total += float(offsets[d][j - d]) + float(offsets[d][j])
+            word_coherence_10[j] = total / 11.0
+
+    variability: Dict[int, List[float]] = {}
+    for k in range(2, 11):
+        if n > k:
+            variability[k] = offsets[k].tolist() + [np.nan] * k
+        else:
+            variability[k] = [np.nan] * n
+
+    return word_coherence, word_coherence_5, word_coherence_10, variability
+
+
+def _phrase_tangeniality_from_embeddings(phrase_embeddings: np.ndarray) -> Tuple[float, float]:
+    normalized = _normalize_embeddings(phrase_embeddings)
+    n = int(normalized.shape[0])
+    if n == 0:
+        return np.nan, np.nan
+
+    sentence_tangeniality1 = np.nan
+    sentence_tangeniality2 = np.nan
+
+    if n > 1:
+        first_order = _cosine_for_offset(normalized, 1)
+        if first_order.size > 0:
+            sentence_tangeniality1 = float(np.mean(first_order))
+    if n > 2:
+        second_order = _cosine_for_offset(normalized, 2)
+        if second_order.size > 0:
+            sentence_tangeniality2 = float(np.mean(second_order))
+
+    return sentence_tangeniality1, sentence_tangeniality2
 
 
 def _get_backend() -> str:
@@ -316,36 +411,7 @@ def get_word_coherence_utterance(row, sentence_encoder, measures):
         return [np.nan]*len(words_texts), [np.nan]*len(words_texts), [np.nan]*len(words_texts), {k: [np.nan]*len(words_texts) for k in range(2, 11)}
 
     word_embeddings = get_word_embeddings(words_texts, sentence_encoder)
-    similarity_matrix = cosine_similarity(word_embeddings)
-
-    # calculate semantic similarity of each word to the immediately preceding word
-    if len(words_texts) > 1:
-        word_coherence = [np.nan] + [similarity_matrix[j, j-1] for j in range(1, len(words_texts))]
-    else:
-        word_coherence = [np.nan]*len(words_texts)
-
-    # calculate semantic similarity of each word in 5-words window
-    if len(words_texts) > 5:
-        word_coherence_5 = [np.nan]*2 + [np.mean(similarity_matrix[j-2:j+3, j]) for j in range(2, len(words_texts)-2)] + [np.nan]*2
-    else:
-        word_coherence_5 = [np.nan]*len(words_texts)
-
-    # calculate semantic similarity of each word in 10-words window
-    if len(words_texts) > 10:
-        word_coherence_10 = [np.nan]*5 + [np.mean(similarity_matrix[j-5:j+6, j]) for j in range(5, len(words_texts)-5)] + [np.nan]*5
-    else:
-        word_coherence_10 = [np.nan]*len(words_texts)
-
-    # calculate word-to-word variability at k inter-word distances (for k from 2 to 10)
-    # indicating semantic similarity between each word and the next following word at k inter-word distance
-    word_word_variability = {}
-    for k in range(2, 11):
-        if len(words_texts) > k:
-            word_word_variability[k] = [similarity_matrix[j, j+k] for j in range(len(words_texts)-k)] + [np.nan]*k
-        else:
-            word_word_variability[k] = [np.nan]*len(words_texts)
-
-    return word_coherence, word_coherence_5, word_coherence_10, word_word_variability    
+    return _word_coherence_from_embeddings(word_embeddings)
 
 
 def get_word_embeddings_bert(word_list, tokenizer: BertTokenizer, model: BertModel) -> np.ndarray:
@@ -427,31 +493,7 @@ def get_word_coherence_utterance_bert(row, tokenizer, model, measures):
         return [np.nan] * len(words_texts), [np.nan] * len(words_texts), [np.nan] * len(words_texts), {k: [np.nan] * len(words_texts) for k in range(2, 11)}
 
     word_embeddings = get_word_embeddings_bert(words_texts, tokenizer, model)
-    similarity_matrix = cosine_similarity(word_embeddings)
-
-    if len(words_texts) > 1:
-        word_coherence = [np.nan] + [similarity_matrix[j, j - 1] for j in range(1, len(words_texts))]
-    else:
-        word_coherence = [np.nan] * len(words_texts)
-
-    if len(words_texts) > 5:
-        word_coherence_5 = [np.nan] * 2 + [np.mean(similarity_matrix[j - 2:j + 3, j]) for j in range(2, len(words_texts) - 2)] + [np.nan] * 2
-    else:
-        word_coherence_5 = [np.nan] * len(words_texts)
-
-    if len(words_texts) > 10:
-        word_coherence_10 = [np.nan] * 5 + [np.mean(similarity_matrix[j - 5:j + 6, j]) for j in range(5, len(words_texts) - 5)] + [np.nan] * 5
-    else:
-        word_coherence_10 = [np.nan] * len(words_texts)
-
-    word_word_variability = {}
-    for k in range(2, 11):
-        if len(words_texts) > k:
-            word_word_variability[k] = [similarity_matrix[j, j + k] for j in range(len(words_texts) - k)] + [np.nan] * k
-        else:
-            word_word_variability[k] = [np.nan] * len(words_texts)
-
-    return word_coherence, word_coherence_5, word_coherence_10, word_word_variability
+    return _word_coherence_from_embeddings(word_embeddings)
 
 def get_word_coherence_summary(word_df, summ_df, measures):
     """
@@ -546,6 +588,9 @@ def get_word_coherence(df_list, utterances_speaker, min_coherence_turn_length, l
         word_df, turn_df, summ_df = df_list
         backend = _get_backend()
         coherence_fn = None
+        sentence_encoder: Optional[SentenceTransformer] = None
+        tokenizer: Optional[BertTokenizer] = None
+        word_model: Optional[BertModel] = None
 
         if backend == "bert":
             bundle = get_bert_bundle(language, measures)
@@ -557,7 +602,7 @@ def get_word_coherence(df_list, utterances_speaker, min_coherence_turn_length, l
             coherence_fn = lambda row: get_word_coherence_utterance_bert(row, tokenizer, word_model, measures)
         else:
             bundle = get_model_bundle(language)
-            sentence_encoder: Optional[SentenceTransformer] = bundle.get("sentence_encoder")
+            sentence_encoder = bundle.get("sentence_encoder")
             if sentence_encoder is None:
                 logger.info(f"Sentence encoder not available for language {language}; skipping word coherence analysis.")
                 return df_list
@@ -572,14 +617,48 @@ def get_word_coherence(df_list, utterances_speaker, min_coherence_turn_length, l
                 return
 
             chunk_lists = _new_coherence_lists()
+            eligible_words: List[List[str]] = []
             for row in rows_chunk:
+                words = row[measures['words_texts']]
+                if len(words) >= min_coherence_turn_length:
+                    eligible_words.append(words)
+
+            row_embeddings: List[Optional[np.ndarray]] = [None] * len(rows_chunk)
+            if eligible_words:
+                flat_words = [w for words in eligible_words for w in words]
+                try:
+                    if backend == "bert" and tokenizer is not None and word_model is not None:
+                        flat_embeddings = get_word_embeddings_bert(flat_words, tokenizer, word_model)
+                    elif backend != "bert" and sentence_encoder is not None:
+                        flat_embeddings = get_word_embeddings(flat_words, sentence_encoder)
+                    else:
+                        flat_embeddings = None
+
+                    if flat_embeddings is not None:
+                        offset = 0
+                        for row_idx, row in enumerate(rows_chunk):
+                            words = row[measures['words_texts']]
+                            if len(words) < min_coherence_turn_length:
+                                continue
+                            count = len(words)
+                            row_embeddings[row_idx] = flat_embeddings[offset:offset + count]
+                            offset += count
+                except Exception as exc:
+                    logger.info(f"Error in batch word embedding analysis: {exc}")
+                    row_embeddings = [None] * len(rows_chunk)
+
+            for row_idx, row in enumerate(rows_chunk):
                 words = row[measures['words_texts']]
                 try:
                     if len(words) < min_coherence_turn_length:
                         append_nan_values(chunk_lists, len(words))
                         continue
 
-                    coherence, coherence_5, coherence_10, variability = coherence_fn(row)
+                    emb = row_embeddings[row_idx]
+                    if emb is not None:
+                        coherence, coherence_5, coherence_10, variability = _word_coherence_from_embeddings(emb)
+                    else:
+                        coherence, coherence_5, coherence_10, variability = coherence_fn(row)
 
                     chunk_lists['word_coherence'] += coherence
                     chunk_lists['word_coherence_5'] += coherence_5
@@ -660,9 +739,20 @@ def calculate_perplexity(
 
     first_param = next(model.parameters(), None)
     device = first_param.device if first_param is not None else torch.device("cpu")
-    tokens = tokenizer(clean_text, return_tensors="pt", add_special_tokens=True)
-    input_ids = tokens["input_ids"].to(device)
-    attention_mask = tokens["attention_mask"].to(device)
+    cached_ids = _cache_get(_PPL_TOKEN_CACHE, clean_text)
+    if cached_ids is None:
+        tokens = tokenizer(
+            clean_text,
+            return_tensors="pt",
+            add_special_tokens=True,
+            truncation=True,
+            max_length=PPL_MAX_TOKENS,
+        )
+        cached_ids = tokens["input_ids"].detach().cpu()
+        _cache_put(_PPL_TOKEN_CACHE, clean_text, cached_ids)
+
+    input_ids = cached_ids.to(device)
+    attention_mask = torch.ones_like(input_ids, device=device)
 
     if input_ids.size(1) < 2:
         return (np.nan, np.nan, np.nan, np.nan)
@@ -797,8 +887,20 @@ def calculate_perplexity_bert(
     if len(clean_text) == 0 or len(clean_text.split()) < 2:
         return np.nan, np.nan, np.nan, np.nan
 
-    tokens = tokenizer(clean_text, return_tensors="pt")
-    input_ids = tokens.input_ids  # [1, T]
+    max_len_model = int(getattr(model.config, "max_position_embeddings", 512))
+    cache_key = f"{max_len_model}:{clean_text}"
+    cached_ids = _cache_get(_BERT_TOKEN_CACHE, cache_key)
+    if cached_ids is None:
+        tokens = tokenizer(
+            clean_text,
+            return_tensors="pt",
+            add_special_tokens=True,
+            truncation=True,
+            max_length=max_len_model,
+        )
+        cached_ids = tokens.input_ids.detach().cpu()
+        _cache_put(_BERT_TOKEN_CACHE, cache_key, cached_ids)
+    input_ids = cached_ids
 
     try:
         device = next(model.parameters()).device
@@ -810,7 +912,6 @@ def calculate_perplexity_bert(
     if seq_len < 2:
         return np.nan, np.nan, np.nan, np.nan
 
-    max_len_model = int(getattr(model.config, "max_position_embeddings", 512))
     mask_id = tokenizer.mask_token_id
     if mask_id is None:
         return np.nan, np.nan, np.nan, np.nan
@@ -887,7 +988,14 @@ def calculate_perplexity_bert(
 
     return perplexity, perplexity_5, perplexity_11, perplexity_15
 
-def calculate_phrase_tangeniality(phrases_texts, utterance_text, sentence_encoder, lm_model, tokenizer):
+def calculate_phrase_tangeniality(
+    phrases_texts,
+    utterance_text,
+    sentence_encoder,
+    lm_model,
+    tokenizer,
+    phrase_embeddings: Optional[np.ndarray] = None,
+):
     """
     ------------------------------------------------------------------------------------------------------
 
@@ -927,16 +1035,14 @@ def calculate_phrase_tangeniality(phrases_texts, utterance_text, sentence_encode
     sentence_tangeniality1 = np.nan
     sentence_tangeniality2 = np.nan
     if sentence_encoder is not None and len(phrases_texts) > 0:
-        phrase_embeddings = sentence_encoder.encode(phrases_texts)
-        similarity_matrix = cosine_similarity(phrase_embeddings)
-
-        # calculate semantic similarity of each phrase to the immediately preceding phrase
-        if len(phrases_texts) > 1:
-            sentence_tangeniality1 = np.mean([similarity_matrix[j-1, j] for j in range(1, len(phrases_texts))])
-
-        # calculate semantic similarity of each phrase to the phrase 2 turns before
-        if len(phrases_texts) > 2:
-            sentence_tangeniality2 = np.mean([similarity_matrix[j-2, j] for j in range(2, len(phrases_texts))])
+        embeddings = phrase_embeddings
+        if embeddings is None:
+            embeddings = sentence_encoder.encode(
+                phrases_texts,
+                convert_to_numpy=True,
+                normalize_embeddings=False,
+            )
+        sentence_tangeniality1, sentence_tangeniality2 = _phrase_tangeniality_from_embeddings(embeddings)
 
     perplexity, perplexity_5, perplexity_11, perplexity_15 = np.nan, np.nan, np.nan, np.nan
     if tokenizer is not None and lm_model is not None:
@@ -1086,10 +1192,44 @@ def calculate_turn_coherence(utterances_filtered, turn_df, min_coherence_turn_le
     ------------------------------------------------------------------------------------------------------
     """
     # speaker_label = ""
-    # semantic similarity between each pair of utterances
+    # turn-to-turn tangentiality only needs adjacent cosine similarities
     utterances_texts = utterances_filtered[measures['utterance_text']].values.tolist()
-    utterances_embeddings = sentence_encoder.encode(utterances_texts) if sentence_encoder else None
-    similarity_matrix = cosine_similarity(utterances_embeddings) if sentence_encoder else None
+    adjacent_turn_similarity = None
+    phrase_embeddings_by_row: Dict[object, np.ndarray] = {}
+    if sentence_encoder:
+        utterances_embeddings = sentence_encoder.encode(
+            utterances_texts,
+            convert_to_numpy=True,
+            normalize_embeddings=False,
+        )
+        normalized_turns = _normalize_embeddings(utterances_embeddings)
+        adjacent_turn_similarity = np.full((len(utterances_filtered),), np.nan, dtype=np.float32)
+        if normalized_turns.shape[0] > 1:
+            adjacent_turn_similarity[1:] = _cosine_for_offset(normalized_turns, 1)
+
+        flat_phrases: List[str] = []
+        phrase_row_indices: List[object] = []
+        phrase_row_counts: List[int] = []
+        for row_idx, row in utterances_filtered.iterrows():
+            if len(row[measures['words_texts']]) < min_coherence_turn_length:
+                continue
+            phrases = row[measures['phrases_texts']]
+            if len(phrases) == 0:
+                continue
+            phrase_row_indices.append(row_idx)
+            phrase_row_counts.append(len(phrases))
+            flat_phrases.extend(phrases)
+
+        if flat_phrases:
+            all_phrase_embeddings = _encode_in_chunks(
+                sentence_encoder,
+                flat_phrases,
+                EMBEDDING_BATCH_SIZE,
+            )
+            offset = 0
+            for row_idx, count in zip(phrase_row_indices, phrase_row_counts):
+                phrase_embeddings_by_row[row_idx] = all_phrase_embeddings[offset:offset + count]
+                offset += count
 
     # Initialize coherence lists
     sentence_tangeniality1_list, sentence_tangeniality2_list = [], []
@@ -1112,11 +1252,16 @@ def calculate_turn_coherence(utterances_filtered, turn_df, min_coherence_turn_le
 
         phrases_texts = row[measures['phrases_texts']]
         utterance_text = row[measures['utterance_text']]
-        
+
         sentence_tangeniality1, sentence_tangeniality2, perplexity, perplexity_5, perplexity_11, perplexity_15 = calculate_phrase_tangeniality(
-            phrases_texts, utterance_text, sentence_encoder, lm_model, tokenizer
+            phrases_texts,
+            utterance_text,
+            sentence_encoder,
+            lm_model,
+            tokenizer,
+            phrase_embeddings=phrase_embeddings_by_row.get(i),
         )
-        
+
         sentence_tangeniality1_list.append(sentence_tangeniality1)
         sentence_tangeniality2_list.append(sentence_tangeniality2)
         perplexity_list.append(perplexity)
@@ -1124,10 +1269,10 @@ def calculate_turn_coherence(utterances_filtered, turn_df, min_coherence_turn_le
         perplexity_11_list.append(perplexity_11)
         perplexity_15_list.append(perplexity_15)
 
-        if i == 0 or len(utterances_filtered.iloc[i - 1][measures['words_texts']]) < min_coherence_turn_length or not sentence_encoder:
+        if i == 0 or len(utterances_filtered.iloc[i - 1][measures['words_texts']]) < min_coherence_turn_length or adjacent_turn_similarity is None:
             turn_to_turn_tangeniality_list.append(np.nan)
         else:
-            turn_to_turn_tangeniality_list.append(similarity_matrix[i, i - 1])
+            turn_to_turn_tangeniality_list.append(float(adjacent_turn_similarity[i]))
 
     turn_df[measures['sentence_tangeniality1']] = sentence_tangeniality1_list
     turn_df[measures['sentence_tangeniality2']] = sentence_tangeniality2_list
@@ -1213,9 +1358,8 @@ def _encode_in_chunks(
         return np.zeros((0, 0), dtype=np.float32)
 
     outputs: List[np.ndarray] = []
-    from tqdm import tqdm
 
-    for start in tqdm(range(0, len(texts), batch_size), desc="Calculating embeddings", unit="batches"):
+    for start in range(0, len(texts), batch_size):
         chunk = texts[start:start + batch_size]
         if len(chunk) == 0:
             continue
@@ -1224,7 +1368,7 @@ def _encode_in_chunks(
             batch_size=min(batch_size, len(chunk)),
             convert_to_numpy=True,
             normalize_embeddings=False,
-            show_progress_bar=True,
+            show_progress_bar=False,
         )
         outputs.append(np.asarray(chunk_emb, dtype=np.float32))
 
@@ -1233,12 +1377,22 @@ def _encode_in_chunks(
 
     return np.vstack(outputs)
 def _release_accelerator_cache() -> None:
-    gc.collect()
+    has_accelerator = False
+    if torch.cuda.is_available():
+        has_accelerator = True
+        try:
+            torch.cuda.empty_cache()
+        except Exception:
+            pass
+
     if torch.backends.mps.is_available():  # type: ignore[attr-defined]
+        has_accelerator = True
         try:
             torch.mps.empty_cache()  # type: ignore[attr-defined]
         except Exception:
             pass
+    if has_accelerator:
+        gc.collect()
 
 
 def _new_coherence_lists() -> Dict[str, object]:
