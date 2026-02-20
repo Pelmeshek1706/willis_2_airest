@@ -4,6 +4,7 @@
 # import the required packages
 import logging
 import itertools
+import sys
 
 import pandas as pd
 import numpy as np
@@ -50,7 +51,8 @@ def create_empty_dataframes(measures):
     turn_df = pd.DataFrame(columns=[measures["turn_pause"], measures["turn_minutes"], measures["turn_words"], 
                                     measures["word_rate"], measures["syllable_rate"], measures["speech_percentage"], 
                                     measures["pause_meandur"], measures["pause_var"], measures["pos"], measures["neg"], 
-                                    measures["neu"], measures["compound"], measures["speech_mattr_5"],
+                                    measures["neu"], measures["compound"], measures["pos_vader"], measures["neg_vader"],
+                                    measures["neu_vader"], measures["compound_vader"], measures["speech_mattr_5"],
                                     measures["speech_mattr_10"], measures["speech_mattr_25"], measures["speech_mattr_50"], measures["speech_mattr_100"],
                                     measures["first_person_percentage"], measures["first_person_sentiment_positive"], measures["first_person_sentiment_negative"],
                                     measures["word_repeat_percentage"], measures["phrase_repeat_percentage"],
@@ -63,6 +65,7 @@ def create_empty_dataframes(measures):
         columns=[measures["file_length"], measures["speech_minutes"], measures["speech_words"], measures["word_rate"],
                 measures["syllable_rate"], measures["word_pause_mean"], measures["word_pause_var"], 
                 measures["speech_percentage"], measures["pos"], measures["neg"], measures["neu"], measures["compound"],
+                measures["pos_vader"], measures["neg_vader"], measures["neu_vader"], measures["compound_vader"],
                 measures["speech_mattr_5"], measures["speech_mattr_10"], measures["speech_mattr_25"], measures["speech_mattr_50"], measures["speech_mattr_100"],
                 measures["first_person_percentage"], measures["first_person_sentiment_positive"],
                 measures["first_person_sentiment_negative"], measures["first_person_sentiment_overall"],
@@ -137,7 +140,8 @@ def download_spacy_models():
         try:
             spacy.load(model)
         except OSError:
-            subprocess.run(["python", "-m", "spacy", "download", model], check=True)
+            # Install into the same interpreter/env that runs this process.
+            subprocess.run([sys.executable, "-m", "spacy", "download", model], check=True)
 
 def download_nltk_resources():
     resources = ["punkt", "averaged_perceptron_tagger"]

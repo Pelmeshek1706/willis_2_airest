@@ -8,7 +8,8 @@ import string
 import logging
 
 import nltk
-from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer # eng
+from .ukrainian_vader import UkrainianSentimentIntensityAnalyzerImproved # ua/uk
 from lexicalrichness import LexicalRichness
 import spacy
 import traceback
@@ -1165,8 +1166,10 @@ def get_sentiment(df_list, text_list, measures, lang='en'):
     """
     ------------------------------------------------------------------------------------------------------
 
-    This function calculates the sentiment scores of the input text using
-     VADER, and adds them to the output dataframe summ_df.
+    This function calculates two sentiment groups:
+     1) sentiment_* via EngSentimentAnalyzer/UkrSentimentAnalyzer
+     2) sentiment_vader_* via classic VADER (en) / Ukrainian VADER (ua|uk)
+    and adds them to turn and summary dataframes.
 
     Parameters:
     ...........
@@ -1185,27 +1188,77 @@ def get_sentiment(df_list, text_list, measures, lang='en'):
     ------------------------------------------------------------------------------------------------------
     """
     try:
+        # Cache heavy analyzers across files in the same Python process.
+        if not hasattr(get_sentiment, "_model_cache"):
+            get_sentiment._model_cache = {}
+
         word_df, turn_df, summ_df = df_list
         _, turn_list, full_text = text_list
-        lemmatizer = spacy.load("uk_core_news_sm") if lang in ['ua', 'uk'] else spacy.load('en_core_web_sm') # should be changed to normal model
-        # SentimentIntensityAnalyzer()
-        sentiment = EngSentimentAnalyzer(compound_scale=4.0, compound_alpha=15.0) if lang == 'en' else UkrSentimentAnalyzer(compound_scale=4.0, compound_alpha=15.0, split_mixed=True)
-        cols = [measures["neg"], measures["neu"], measures["pos"], measures["compound"], measures["speech_mattr_5"], measures["speech_mattr_10"], measures["speech_mattr_25"], measures["speech_mattr_50"], measures["speech_mattr_100"]]
+        lemmatizer = spacy.load("uk_core_news_sm") if lang in ['ua', 'uk'] else spacy.load('en_core_web_sm')
+
+        lang_key = "uk" if lang in ["ua", "uk"] else "en"
+        cache = get_sentiment._model_cache
+
+        if lang_key == "en":
+            if "vader_en" not in cache:
+                cache["vader_en"] = SentimentIntensityAnalyzer()
+            if "sentiment_en" not in cache:
+                try:
+                    cache["sentiment_en"] = EngSentimentAnalyzer()
+                except Exception as model_exc:
+                    logger.info(f"Falling back to English VADER for sentiment model: {model_exc}")
+                    cache["sentiment_en"] = cache["vader_en"]
+            sentiment_analyzer = cache["sentiment_en"]
+            vader_analyzer = cache["vader_en"]
+        else:
+            if "vader_uk" not in cache:
+                cache["vader_uk"] = UkrainianSentimentIntensityAnalyzerImproved()
+            if "sentiment_uk" not in cache:
+                try:
+                    cache["sentiment_uk"] = UkrSentimentAnalyzer()
+                except Exception as model_exc:
+                    logger.info(f"Falling back to Ukrainian VADER for sentiment model: {model_exc}")
+                    cache["sentiment_uk"] = cache["vader_uk"]
+            sentiment_analyzer = cache["sentiment_uk"]
+            vader_analyzer = cache["vader_uk"]
+
+        sentiment_cols = [measures["neg"], measures["neu"], measures["pos"], measures["compound"]]
+        vader_cols = [measures["neg_vader"], measures["neu_vader"], measures["pos_vader"], measures["compound_vader"]]
+        mattr_cols = [measures["speech_mattr_5"], measures["speech_mattr_10"], measures["speech_mattr_25"], measures["speech_mattr_50"], measures["speech_mattr_100"]]
+        all_cols = sentiment_cols + vader_cols + mattr_cols
+
+        def _extract_sentiment_scores(score_dict):
+            return [
+                float(score_dict.get("negative", score_dict.get("neg", 0.0))),
+                float(score_dict.get("neutral", score_dict.get("neu", 0.0))),
+                float(score_dict.get("positive", score_dict.get("pos", 0.0))),
+                float(score_dict.get("compound", 0.0)),
+            ]
+
+        def _extract_vader_scores(score_dict):
+            return [
+                float(score_dict.get("neg", score_dict.get("negative", 0.0))),
+                float(score_dict.get("neu", score_dict.get("neutral", 0.0))),
+                float(score_dict.get("pos", score_dict.get("positive", 0.0))),
+                float(score_dict.get("compound", 0.0)),
+            ]
 
         for idx, u in enumerate(turn_list):
             try:
-                sentiment_dict = sentiment.polarity_scores(u)
+                sentiment_dict = sentiment_analyzer.polarity_scores(u)
+                vader_dict = vader_analyzer.polarity_scores(u)
                 mattrs = [get_mattr(u, lemmatizer, window_size=ws) for ws in [5, 10, 25, 50, 100]]
-                turn_df.loc[idx, cols] = list(sentiment_dict.values()) + mattrs
+                turn_df.loc[idx, all_cols] = _extract_sentiment_scores(sentiment_dict) + _extract_vader_scores(vader_dict) + mattrs
 
             except Exception as e:
                 logger.info(f"Error in sentiment analysis: {e}")
                 continue
 
-        sentiment_dict = sentiment.polarity_scores(full_text)
+        sentiment_dict = sentiment_analyzer.polarity_scores(full_text)
+        vader_dict = vader_analyzer.polarity_scores(full_text)
         mattrs = [get_mattr(full_text, lemmatizer, window_size=ws) for ws in [5, 10, 25, 50, 100]]
 
-        summ_df.loc[0, cols] = list(sentiment_dict.values()) + mattrs
+        summ_df.loc[0, all_cols] = _extract_sentiment_scores(sentiment_dict) + _extract_vader_scores(vader_dict) + mattrs
         df_list = [word_df, turn_df, summ_df]
     except Exception as e:
         logger.info(f"Error in sentiment feature calculation: {e}")

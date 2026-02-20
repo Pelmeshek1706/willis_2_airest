@@ -17,7 +17,11 @@ from huggingface_hub import login
 import os
 
 token = os.getenv("HUGGINGFACEHUB_API_TOKEN")
-login(token)
+if token:
+    try:
+        login(token)
+    except Exception:
+        pass
 
 
 
@@ -1363,6 +1367,7 @@ def _encode_in_chunks(
         chunk = texts[start:start + batch_size]
         if len(chunk) == 0:
             continue
+        # oom here
         chunk_emb = encoder.encode(
             chunk,
             batch_size=min(batch_size, len(chunk)),
