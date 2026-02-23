@@ -7,7 +7,7 @@ import numpy as np
 import string
 import logging
 from functools import lru_cache
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import nltk
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
@@ -241,8 +241,21 @@ def get_multilingual_sentiment_analyzer() -> MultilingualSentiment:
     return MultilingualSentiment()
 
 
-@lru_cache(maxsize=1)
-def get_vader_sentiment_analyzer() -> SentimentIntensityAnalyzer:
+@lru_cache(maxsize=4)
+def get_vader_sentiment_analyzer(lang: str = "en") -> Any:
+    normalized_lang = (lang or "en").lower()
+    if normalized_lang in {"uk", "ua"}:
+        try:
+            from .ukrainian_vader import SentimentIntensityAnalyzerUK
+
+            return SentimentIntensityAnalyzerUK()
+        except Exception as exc:
+            logger.warning(
+                "Failed to initialize Ukrainian VADER analyzer for lang=%s (%s). "
+                "Falling back to default VADER.",
+                normalized_lang,
+                exc,
+            )
     return SentimentIntensityAnalyzer()
 
 
@@ -841,7 +854,7 @@ def get_sentiment(
         lemmatizer = spacy.load("uk_core_news_sm") if lang in ['ua', 'uk'] else spacy.load('en_core_web_sm') # should be changed to normal model
         
         sentiment = get_multilingual_sentiment_analyzer()
-        vader_sentiment = get_vader_sentiment_analyzer()
+        vader_sentiment = get_vader_sentiment_analyzer(lang=lang)
         sentiment_cols = [measures["neg"], measures["neu"], measures["pos"], measures["compound"]]
         mattr_cols = [measures["speech_mattr_5"], measures["speech_mattr_10"], measures["speech_mattr_25"], measures["speech_mattr_50"], measures["speech_mattr_100"]]
         cols = sentiment_cols + mattr_cols
