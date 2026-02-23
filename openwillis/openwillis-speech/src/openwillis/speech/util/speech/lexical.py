@@ -13,7 +13,6 @@ import nltk
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from lexicalrichness import LexicalRichness
 import spacy
-import traceback
 import torch
 from transformers import pipeline
 
@@ -685,6 +684,7 @@ def get_first_person_summ(summ_df, turn_df, full_text, measures, lang='en', nlp=
             else:
                 summ_df[out_overall_col] = summ_df[out_neg_col].iloc[0]
 
+    original_summ_df = summ_df.copy(deep=True)
     summ_df[measures["first_person_percentage"]] = calculate_first_person_percentage(full_text, lang=lang, nlp=nlp)
     try:
         _compute_first_person_summary(
@@ -710,8 +710,8 @@ def get_first_person_summ(summ_df, turn_df, full_text, measures, lang='en', nlp=
 
         return summ_df
     except Exception:
-        print("exception")
-        print(traceback.format_exc())
+        logger.exception("Error while computing first-person summary features")
+        return original_summ_df
 
 
 # def get_tag_l(full_text, lang='en'):
@@ -835,7 +835,11 @@ def get_pos_tag(df_list, text_list, measures, lang="en"):
         if len(turn_list) > 0:
             turn_df = get_first_person_turn(turn_df, turn_list, measures, lang=normalized_lang, nlp=nlp)
 
-        summ_df = get_first_person_summ(summ_df, turn_df, full_text, measures, normalized_lang, nlp=nlp)
+        next_summ_df = get_first_person_summ(summ_df, turn_df, full_text, measures, normalized_lang, nlp=nlp)
+        if isinstance(next_summ_df, pd.DataFrame):
+            summ_df = next_summ_df
+        else:
+            logger.error("get_first_person_summ returned non-DataFrame; keeping previous summary dataframe")
 
         df_list = [word_df, turn_df, summ_df]
     except Exception as e:
