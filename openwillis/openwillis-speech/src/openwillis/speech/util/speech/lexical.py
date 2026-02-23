@@ -889,10 +889,11 @@ def get_sentiment(
     try:
         word_df, turn_df, summ_df = df_list
         _, turn_list, full_text = text_list
-        lemmatizer = spacy.load("uk_core_news_sm") if lang in ['ua', 'uk'] else spacy.load('en_core_web_sm') # should be changed to normal model
+        normalized_lang = _normalize_lang(lang)
+        lemmatizer = get_spacy_nlp(normalized_lang)
         
         sentiment = get_multilingual_sentiment_analyzer()
-        vader_sentiment = get_vader_sentiment_analyzer(lang=lang)
+        vader_sentiment = get_vader_sentiment_analyzer(lang=normalized_lang)
         sentiment_cols = [measures["neg"], measures["neu"], measures["pos"], measures["compound"]]
         mattr_cols = [measures["speech_mattr_5"], measures["speech_mattr_10"], measures["speech_mattr_25"], measures["speech_mattr_50"], measures["speech_mattr_100"]]
         cols = sentiment_cols + mattr_cols
