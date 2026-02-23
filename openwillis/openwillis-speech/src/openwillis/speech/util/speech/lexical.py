@@ -881,17 +881,17 @@ def get_sentiment(
         if sentiment_dict is None:
             sentiment_dict = sentiment.polarity_scores(full_text)
 
-        vader_dict = _aggregate_turn_sentiment_scores(
-            turn_for_summary,
-            length_col=_TURN_SENTIMENT_TOKEN_COUNT_COL,
-            neg_col=VADER_SENTIMENT_COLS["neg"],
-            neu_col=VADER_SENTIMENT_COLS["neu"],
-            pos_col=VADER_SENTIMENT_COLS["pos"],
-            alpha=summary_sentiment_alpha,
-            eps=summary_sentiment_eps,
-        )
-        if vader_dict is None:
-            vader_dict = vader_sentiment.polarity_scores(full_text)
+        # vader_dict = _aggregate_turn_sentiment_scores(
+        #     turn_for_summary,
+        #     length_col=_TURN_SENTIMENT_TOKEN_COUNT_COL,
+        #     neg_col=VADER_SENTIMENT_COLS["neg"],
+        #     neu_col=VADER_SENTIMENT_COLS["neu"],
+        #     pos_col=VADER_SENTIMENT_COLS["pos"],
+        #     alpha=summary_sentiment_alpha,
+        #     eps=summary_sentiment_eps,
+        # )
+        # if vader_dict is None:
+        vader_dict = vader_sentiment.polarity_scores(full_text)
 
         mattrs = [get_mattr(full_text, lemmatizer, window_size=ws) for ws in [5, 10, 25, 50, 100]]
 
