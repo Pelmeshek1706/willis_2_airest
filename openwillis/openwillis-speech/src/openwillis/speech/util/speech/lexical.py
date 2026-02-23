@@ -102,6 +102,30 @@ FIRST_PERSON_VADER_COLS = {
 DEFAULT_SUMMARY_SENTIMENT_ALPHA = 0.0
 DEFAULT_SUMMARY_SENTIMENT_EPS = 1e-8
 _TURN_SENTIMENT_TOKEN_COUNT_COL = "__turn_sentiment_token_count"
+_SPACY_BATCH_SIZE_TURNS = 64
+_SPACY_BATCH_SIZE_WORDS = 256
+
+
+def _normalize_lang(lang: Optional[str]) -> str:
+    normalized = (lang or "en").lower().strip()
+    if normalized in {"ua", "uk"}:
+        return normalized
+    return "en"
+
+
+def _spacy_model_name(lang: str) -> str:
+    return "uk_core_news_sm" if lang in {"ua", "uk"} else "en_core_web_sm"
+
+
+@lru_cache(maxsize=2)
+def _get_spacy_nlp_cached(model_name: str):
+    # Keep tokenization + POS + morphology while dropping heavy, unused components.
+    return spacy.load(model_name, disable=["parser", "ner", "textcat"])
+
+
+def get_spacy_nlp(lang: str = "en"):
+    normalized_lang = _normalize_lang(lang)
+    return _get_spacy_nlp_cached(_spacy_model_name(normalized_lang))
 
 
 class MultilingualSentiment:
@@ -365,7 +389,7 @@ def get_mattr(text, lemmatizer, window_size=50):
 
     return mattr
 
-def get_tag(word_df, word_list, measures, lang = 'en'):
+def get_tag(word_df, word_list, measures, lang='en', nlp=None):
     """
     ------------------------------------------------------------------------------------------------------
 
@@ -390,13 +414,16 @@ def get_tag(word_df, word_list, measures, lang = 'en'):
     ------------------------------------------------------------------------------------------------------
     """
     # tag_list = nltk.pos_tag(word_list)
-    tag_list = get_tag_l(word_list, lang=lang)
+    tag_list = get_tag_l(word_list, lang=lang, nlp=nlp, batch_size=_SPACY_BATCH_SIZE_WORDS)
     
     # tag_list_pos = [TAG_DICT_T[lang][tag[1]] if tag[1] in TAG_DICT_T[lang].keys() else "Other" for tag in tag_list] # change TAG_LIST
     tag_list_pos = [tag[1] for tag in tag_list]
     word_df[measures["part_of_speech"]] = tag_list_pos
     # words['first_person']
-    word_df[measures["first_person"]] = [True if word.lower() in FIRST_PERSON_PRONOUNS_T_LOWER[lang] else np.nan for word, pos, _ in tag_list]# [word in FIRST_PERSON_PRONOUNS_T[lang] for word in word_list]
+    word_df[measures["first_person"]] = [
+        True if str(word).lower() in FIRST_PERSON_PRONOUNS_T_LOWER[lang] else np.nan
+        for word, pos, _ in tag_list
+    ]  # [word in FIRST_PERSON_PRONOUNS_T[lang] for word in word_list]
     # make non pronouns NaN
     allowed_tags = ["Pronoun", "DET"]
     word_df[measures["first_person"]] = word_df[measures["first_person"]].where(word_df[measures["part_of_speech"]].isin(allowed_tags), np.nan)
@@ -489,7 +516,7 @@ def calculate_first_person_sentiment(
 #     first_person_pronouns = len([word for word in pronouns if word in FIRST_PERSON_PRONOUNS_T[lang]])
 #     return (first_person_pronouns / len(pronouns)) * 100
 
-def calculate_first_person_percentage(text, lang='en'):
+def calculate_first_person_percentage(text, lang='en', nlp=None):
     """
     Calculates the percentage of first person pronouns in the input text.
     
@@ -500,22 +527,40 @@ def calculate_first_person_percentage(text, lang='en'):
     Returns:
         float: The percentage of first person pronouns in the text, or np.nan if no tokens.
     """
-    if lang in ['ua', 'uk']:
-        nlp = spacy.load("uk_core_news_sm")
-    else:
-        nlp = spacy.load("en_core_web_sm")
-    
-    # Обработка текста
+    normalized_lang = _normalize_lang(lang)
+    nlp = nlp or get_spacy_nlp(normalized_lang)
+    text = text if isinstance(text, str) else ("" if text is None else str(text))
     doc = nlp(text)
     total_tokens = len(doc)
     if total_tokens == 0:
         return np.nan
 
-    first_person_count = sum(1 for token in doc if token.text.lower() in FIRST_PERSON_PRONOUNS_T_LOWER[lang])
+    first_person_pronouns = FIRST_PERSON_PRONOUNS_T_LOWER.get(normalized_lang, FIRST_PERSON_PRONOUNS_T_LOWER["en"])
+    first_person_count = sum(1 for token in doc if token.text.lower() in first_person_pronouns)
     
     return (first_person_count / total_tokens) * 100
 
-def get_first_person_turn(turn_df, turn_list, measures, lang = 'en'):
+def calculate_first_person_percentage_batch(texts, lang='en', nlp=None, batch_size=_SPACY_BATCH_SIZE_TURNS):
+    normalized_lang = _normalize_lang(lang)
+    nlp = nlp or get_spacy_nlp(normalized_lang)
+    first_person_pronouns = FIRST_PERSON_PRONOUNS_T_LOWER.get(normalized_lang, FIRST_PERSON_PRONOUNS_T_LOWER["en"])
+
+    if texts is None:
+        return []
+
+    normalized_texts = [text if isinstance(text, str) else ("" if text is None else str(text)) for text in texts]
+    output: List[float] = []
+    for doc in nlp.pipe(normalized_texts, batch_size=max(1, int(batch_size))):
+        total_tokens = len(doc)
+        if total_tokens == 0:
+            output.append(np.nan)
+            continue
+        first_person_count = sum(1 for token in doc if token.text.lower() in first_person_pronouns)
+        output.append((first_person_count / total_tokens) * 100)
+    return output
+
+
+def get_first_person_turn(turn_df, turn_list, measures, lang='en', nlp=None):
     """
     ------------------------------------------------------------------------------------------------------
 
@@ -537,7 +582,12 @@ def get_first_person_turn(turn_df, turn_list, measures, lang = 'en'):
 
     ------------------------------------------------------------------------------------------------------
     """
-    first_person_percentages = [calculate_first_person_percentage(turn, lang) for turn in turn_list]
+    first_person_percentages = calculate_first_person_percentage_batch(
+        turn_list,
+        lang=lang,
+        nlp=nlp,
+        batch_size=_SPACY_BATCH_SIZE_TURNS,
+    )
 
     turn_df[measures["first_person_percentage"]] = first_person_percentages
 
@@ -558,7 +608,7 @@ def get_first_person_turn(turn_df, turn_list, measures, lang = 'en'):
 
     return turn_df
 
-def get_first_person_summ(summ_df, turn_df, full_text, measures, lang='en'):
+def get_first_person_summ(summ_df, turn_df, full_text, measures, lang='en', nlp=None):
     """
     ------------------------------------------------------------------------------------------------------
 
@@ -635,7 +685,7 @@ def get_first_person_summ(summ_df, turn_df, full_text, measures, lang='en'):
             else:
                 summ_df[out_overall_col] = summ_df[out_neg_col].iloc[0]
 
-    summ_df[measures["first_person_percentage"]] = calculate_first_person_percentage(full_text, lang=lang)
+    summ_df[measures["first_person_percentage"]] = calculate_first_person_percentage(full_text, lang=lang, nlp=nlp)
     try:
         _compute_first_person_summary(
             measures["pos"],
@@ -674,97 +724,79 @@ def get_first_person_summ(summ_df, turn_df, full_text, measures, lang='en'):
 #     pos_tags = [(token.text, TAG_DICT_T[lang].get(token.tag_, token.tag_)) for token in doc]
 #     return pos_tags
 
-def count_space_tokens(text, lang='en'):
-    if lang in ['ua', 'uk']:
-        nlp = spacy.load("uk_core_news_sm")
-    else:
-        nlp = spacy.load("en_core_web_sm")
-
+def count_space_tokens(text, lang='en', nlp=None):
+    normalized_lang = _normalize_lang(lang)
+    nlp = nlp or get_spacy_nlp(normalized_lang)
+    text = text if isinstance(text, str) else ("" if text is None else str(text))
     doc = nlp(text)
     return sum(1 for token in doc if token.pos_ == "SPACE")
 
 
-def get_tag_l(full_text, lang='en'):
+def _extract_pos_and_verb_tense(token, lang: str):
+    if lang in {'ua', 'uk'}:
+        pos = TAG_DICT_T[lang].get(token.pos_, token.pos_)
+        if token.pos_ in {"VERB", "AUX"}:
+            tense_vals = token.morph.get("Tense")
+            if tense_vals:
+                if "Past" in tense_vals:
+                    verb_tense = "Past"
+                elif "Pres" in tense_vals:
+                    verb_tense = "Present"
+                else:
+                    verb_tense = "Other"
+            else:
+                verb_tense = "Other"
+        else:
+            verb_tense = None
+    else:
+        pos = TAG_DICT_T[lang].get(token.tag_, token.tag_)
+        if token.tag_ in PRESENT:
+            verb_tense = "Present"
+        elif token.tag_ in PAST:
+            verb_tense = "Past"
+        else:
+            verb_tense = "Other"
+    return pos, verb_tense
+
+
+def get_tag_l(full_text, lang='en', nlp=None, batch_size=_SPACY_BATCH_SIZE_WORDS):
     """
     Returns a list of tuples (text, pos, verb_tense).
     If given a list, produce exactly one tag per input element to keep
     alignment with word_df rows.
     """
-    if lang in ['ua', 'uk']:
-        nlp = spacy.load("uk_core_news_sm")
-    else:
-        nlp = spacy.load("en_core_web_sm")
+    normalized_lang = _normalize_lang(lang)
+    nlp = nlp or get_spacy_nlp(normalized_lang)
 
     tags = []
 
     # Maintain 1:1 alignment when a list of words is provided
     if isinstance(full_text, list):
-        for w in full_text:
-            # Process each token individually to avoid spaCy retokenization expanding counts
-            doc = nlp(w if isinstance(w, str) else str(w))
+        normalized_words = [w if isinstance(w, str) else ("" if w is None else str(w)) for w in full_text]
+        for original_word, doc in zip(
+            full_text,
+            nlp.pipe(normalized_words, batch_size=max(1, int(batch_size))),
+        ):
             # Pick first non-space token if available, else fall back to empty
             token = next((t for t in doc if t.pos_ != "SPACE"), None)
             if token is None:
                 # No token produced (e.g., empty/space-only). Mark as Other/None keeping alignment
                 pos = "Other"
                 verb_tense = None
-                text = w
+                text = original_word
             else:
                 text = token.text
-                if lang in ['ua', 'uk']:
-                    pos = TAG_DICT_T[lang].get(token.pos_, token.pos_)
-                    if token.pos_ in {"VERB", "AUX"}:
-                        tense_vals = token.morph.get("Tense")
-                        if tense_vals:
-                            if "Past" in tense_vals:
-                                verb_tense = "Past"
-                            elif "Pres" in tense_vals:
-                                verb_tense = "Present"
-                            else:
-                                verb_tense = "Other"
-                        else:
-                            verb_tense = "Other"
-                    else:
-                        verb_tense = None
-                else:
-                    pos = TAG_DICT_T[lang].get(token.tag_, token.tag_)
-                    if token.tag_ in PRESENT:
-                        verb_tense = "Present"
-                    elif token.tag_ in PAST:
-                        verb_tense = "Past"
-                    else:
-                        verb_tense = "Other"
+                pos, verb_tense = _extract_pos_and_verb_tense(token, normalized_lang)
             tags.append((text, pos, verb_tense))
         return tags
 
     # If given a single string, process as a whole and filter out SPACE tokens
+    full_text = full_text if isinstance(full_text, str) else ("" if full_text is None else str(full_text))
     doc = nlp(full_text)
     for token in doc:
         if token.pos_ == "SPACE":
             continue
-        if lang in ['ua', 'uk']:
-            pos = TAG_DICT_T[lang].get(token.pos_, token.pos_)
-            if token.pos_ in {"VERB", "AUX"}:
-                tense_vals = token.morph.get("Tense")
-                if tense_vals:
-                    if "Past" in tense_vals:
-                        verb_tense = "Past"
-                    elif "Pres" in tense_vals:
-                        verb_tense = "Present"
-                    else:
-                        verb_tense = "Other"
-                else:
-                    verb_tense = "Other"
-            else:
-                verb_tense = None
-        else:
-            pos = TAG_DICT_T[lang].get(token.tag_, token.tag_)
-            if token.tag_ in PRESENT:
-                verb_tense = "Present"
-            elif token.tag_ in PAST:
-                verb_tense = "Past"
-            else:
-                verb_tense = "Other"
+        pos, verb_tense = _extract_pos_and_verb_tense(token, normalized_lang)
         tags.append((token.text, pos, verb_tense))
 
     return tags
@@ -795,13 +827,15 @@ def get_pos_tag(df_list, text_list, measures, lang="en"):
     try:
         word_df, turn_df, summ_df = df_list
         word_list, turn_list, full_text = text_list
+        normalized_lang = _normalize_lang(lang)
+        nlp = get_spacy_nlp(normalized_lang)
 
-        word_df = get_tag(word_df, word_list, measures, lang=lang)
+        word_df = get_tag(word_df, word_list, measures, lang=normalized_lang, nlp=nlp)
 
         if len(turn_list) > 0:
-            turn_df = get_first_person_turn(turn_df, turn_list, measures, lang=lang)
+            turn_df = get_first_person_turn(turn_df, turn_list, measures, lang=normalized_lang, nlp=nlp)
 
-        summ_df = get_first_person_summ(summ_df, turn_df, full_text, measures, lang)
+        summ_df = get_first_person_summ(summ_df, turn_df, full_text, measures, normalized_lang, nlp=nlp)
 
         df_list = [word_df, turn_df, summ_df]
     except Exception as e:
