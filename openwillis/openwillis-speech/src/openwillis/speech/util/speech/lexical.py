@@ -868,15 +868,20 @@ def calculate_prop_function_words(text, lang='en', nlp=None):
         logger.warning(f"Failed to parse text for prop_function_words: {exc}")
         return np.nan
 
-    total_tokens = 0
-    function_tokens = 0
+    pos_counts = doc.count_by(spacy.attrs.POS)
+    space_id = doc.vocab.strings["SPACE"]
+    punct_id = doc.vocab.strings["PUNCT"]
 
-    for token in doc:
-        if token.is_space or token.is_punct:
-            continue
-        total_tokens += 1
-        if token.pos_ in FUNCTION_WORD_POS:
-            function_tokens += 1
+    total_tokens = sum(
+        count
+        for pos_id, count in pos_counts.items()
+        if pos_id not in {space_id, punct_id}
+    )
+
+    function_tokens = 0
+    for pos in FUNCTION_WORD_POS:
+        pos_id = doc.vocab.strings[pos]
+        function_tokens += pos_counts.get(pos_id, 0)
 
     if total_tokens <= 0:
         return np.nan
