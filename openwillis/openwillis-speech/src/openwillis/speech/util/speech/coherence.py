@@ -823,12 +823,13 @@ def calculate_perplexity(
                 batch[row_idx, -lens[row_idx]:] = seq
 
             attn_mask = (batch != pad_token).long()
-            lens_tensor = torch.tensor(lens, device=device, dtype=torch.long)
             next_tensor = torch.tensor(next_tokens, device=device, dtype=torch.long)
 
             with torch.inference_mode():
                 outputs = model(input_ids=batch, attention_mask=attn_mask)
-                idx = lens_tensor - 1
+                # Context tokens are right-aligned, so the last real token sits at max_window - 1
+                # for every row regardless of its individual context length.
+                idx = torch.full((batch.size(0),), max_window - 1, device=device, dtype=torch.long)
                 logits = outputs.logits[torch.arange(batch.size(0), device=device), idx].float()
                 log_probs = torch.log_softmax(logits, dim=-1)
                 log_prob_chunks.append(log_probs[torch.arange(batch.size(0), device=device), next_tensor])
