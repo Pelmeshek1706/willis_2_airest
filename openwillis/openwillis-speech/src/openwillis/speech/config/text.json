@@ -66,6 +66,7 @@
   "first_person": "first_person",
   "verb_tense": "verb_tense",
   "first_person_percentage": "first_person_percentage",
+  "prop_verb_past": "prop_verb_past",
   "first_person_sentiment_positive": "first_person_sentiment_positive",
   "first_person_sentiment_negative": "first_person_sentiment_negative",
   "first_person_sentiment_overall": "first_person_sentiment_overall",

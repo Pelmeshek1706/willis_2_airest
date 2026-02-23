@@ -67,7 +67,7 @@ def create_empty_dataframes(measures):
                 measures["speech_percentage"], measures["pos"], measures["neg"], measures["neu"], measures["compound"],
                 measures["pos_vader"], measures["neg_vader"], measures["neu_vader"], measures["compound_vader"],
                 measures["speech_mattr_5"], measures["speech_mattr_10"], measures["speech_mattr_25"], measures["speech_mattr_50"], measures["speech_mattr_100"],
-                measures["first_person_percentage"], measures["first_person_sentiment_positive"],
+                measures["first_person_percentage"], measures["prop_verb_past"], measures["first_person_sentiment_positive"],
                 measures["first_person_sentiment_negative"], measures["first_person_sentiment_overall"],
                 measures["word_repeat_percentage"], measures["phrase_repeat_percentage"],
                 measures["word_coherence_mean"], measures["word_coherence_var"],

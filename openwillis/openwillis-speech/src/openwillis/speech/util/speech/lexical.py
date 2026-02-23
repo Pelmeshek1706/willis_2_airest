@@ -794,6 +794,58 @@ def _extract_pos_and_verb_tense(token, lang: str):
     return pos, verb_tense
 
 
+def calculate_prop_verb_past(text, lang='en', nlp=None):
+    """
+    Compute proportion of past-tense verbs among all verbs and auxiliaries.
+    Returns NaN when no verbs are present.
+    """
+    normalized_lang = _normalize_lang(lang)
+    nlp = nlp or get_spacy_nlp(normalized_lang)
+    text = text if isinstance(text, str) else ("" if text is None else str(text))
+    if not text.strip():
+        return np.nan
+
+    try:
+        # Lemmatization is not required here and can fail on malformed/noisy tokens.
+        if "lemmatizer" in nlp.pipe_names:
+            with nlp.select_pipes(disable=["lemmatizer"]):
+                doc = nlp(text)
+        else:
+            doc = nlp(text)
+    except Exception as exc:
+        logger.warning(f"Failed to parse text for prop_verb_past: {exc}")
+        return np.nan
+    total_verbs = 0
+    past_verbs = 0
+
+    for token in doc:
+        if token.is_space or token.is_punct:
+            continue
+        if token.pos_ not in {"VERB", "AUX"}:
+            continue
+        total_verbs += 1
+        tense_vals = token.morph.get("Tense")
+        verb_tense = None
+        if tense_vals:
+            if "Past" in tense_vals:
+                verb_tense = "Past"
+            elif "Pres" in tense_vals:
+                verb_tense = "Present"
+            elif "Fut" in tense_vals:
+                verb_tense = "Future"
+            else:
+                verb_tense = "Other"
+        else:
+            _, verb_tense = _extract_pos_and_verb_tense(token, normalized_lang)
+        if verb_tense == "Past":
+            past_verbs += 1
+
+    if total_verbs <= 0:
+        return np.nan
+
+    return float(past_verbs / total_verbs)
+
+
 def get_tag_l(full_text, lang='en', nlp=None, batch_size=_SPACY_BATCH_SIZE_WORDS):
     """
     Returns a list of tuples (text, pos, verb_tense).
@@ -866,6 +918,7 @@ def get_pos_tag(df_list, text_list, measures, lang="en"):
         nlp = get_spacy_nlp(normalized_lang)
 
         word_df = get_tag(word_df, word_list, measures, lang=normalized_lang, nlp=nlp)
+        summ_df[measures["prop_verb_past"]] = calculate_prop_verb_past(full_text, lang=normalized_lang, nlp=nlp)
 
         if len(turn_list) > 0:
             turn_df = get_first_person_turn(turn_df, turn_list, measures, lang=normalized_lang, nlp=nlp)
