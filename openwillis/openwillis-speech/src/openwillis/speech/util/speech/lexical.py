@@ -79,6 +79,10 @@ FIRST_PERSON_PRONOUNS = ["I", "me", "my", "mine", "myself"]
 FIRST_PERSON_PRONOUNS_T = {'en' : {"I", "me", "my", "mine", "myself"},
                            'ua' : {"я", "мене", "мені", "мною", "мій", "моя", "мої", "моє"},
                            'uk' : {"я", "мене", "мені", "мною", "мій", "моя", "мої", "моє"},}
+FIRST_PERSON_PRONOUNS_T_LOWER = {
+    lang: {p.lower() for p in pronouns}
+    for lang, pronouns in FIRST_PERSON_PRONOUNS_T.items()
+}
 PRESENT = ["VBP", "VBZ"]
 PAST = ["VBD", "VBN"]
 
@@ -94,6 +98,10 @@ FIRST_PERSON_VADER_COLS = {
     "negative": "first_person_sentiment_negative_vader",
     "overall": "first_person_sentiment_overall_vader",
 }
+
+DEFAULT_SUMMARY_SENTIMENT_ALPHA = 0.0
+DEFAULT_SUMMARY_SENTIMENT_EPS = 1e-8
+_TURN_SENTIMENT_TOKEN_COUNT_COL = "__turn_sentiment_token_count"
 
 
 class MultilingualSentiment:
@@ -246,6 +254,66 @@ def _sentiment_values(scores: dict) -> List[float]:
         scores.get("compound", np.nan),
     ]
 
+def _count_turn_tokens(text: str, tokenizer) -> float:
+    if text is None:
+        return 0.0
+    if not isinstance(text, str):
+        text = str(text)
+    if not text.strip():
+        return 0.0
+
+    try:
+        encoded = tokenizer(
+            text,
+            add_special_tokens=False,
+            truncation=False,
+            return_attention_mask=False,
+        )
+        token_ids = encoded.get("input_ids", [])
+        return float(len(token_ids))
+    except Exception:
+        return float(len(text.split()))
+
+def _aggregate_turn_sentiment_scores(
+    turn_df: pd.DataFrame,
+    *,
+    length_col: str,
+    neg_col: str,
+    neu_col: str,
+    pos_col: str,
+    alpha: float = DEFAULT_SUMMARY_SENTIMENT_ALPHA,
+    eps: float = DEFAULT_SUMMARY_SENTIMENT_EPS,
+) -> Optional[Dict[str, float]]:
+    required_cols = [length_col, neg_col, neu_col, pos_col]
+    if any(c not in turn_df.columns for c in required_cols):
+        return None
+
+    clean = turn_df[required_cols].apply(pd.to_numeric, errors="coerce")
+    lengths = clean[length_col].to_numpy(dtype=float)
+    probs = clean[[neg_col, neu_col, pos_col]].to_numpy(dtype=float)
+
+    mask = np.isfinite(lengths) & np.all(np.isfinite(probs), axis=1)
+    if not np.any(mask):
+        return None
+
+    lengths = np.maximum(lengths[mask], 0.0)
+    probs = probs[mask]
+
+    weights_raw = np.power(lengths + float(eps), float(alpha))
+    if not np.all(np.isfinite(weights_raw)) or float(np.sum(weights_raw)) <= 0.0:
+        weights_raw = np.ones_like(lengths, dtype=float)
+
+    weights = weights_raw / np.sum(weights_raw)
+    avg_scores = np.sum(probs * weights[:, None], axis=0)
+
+    neg, neu, pos = avg_scores.tolist()
+    return {
+        "neg": float(neg),
+        "neu": float(neu),
+        "pos": float(pos),
+        "compound": float(pos - neg),
+    }
+
 
 def get_mattr(text, lemmatizer, window_size=50):
     """
@@ -315,7 +383,7 @@ def get_tag(word_df, word_list, measures, lang = 'en'):
     tag_list_pos = [tag[1] for tag in tag_list]
     word_df[measures["part_of_speech"]] = tag_list_pos
     # words['first_person']
-    word_df[measures["first_person"]] = [True if word.lower() in FIRST_PERSON_PRONOUNS_T[lang] else np.nan for word, pos, _ in tag_list]# [word in FIRST_PERSON_PRONOUNS_T[lang] for word in word_list]
+    word_df[measures["first_person"]] = [True if word.lower() in FIRST_PERSON_PRONOUNS_T_LOWER[lang] else np.nan for word, pos, _ in tag_list]# [word in FIRST_PERSON_PRONOUNS_T[lang] for word in word_list]
     # make non pronouns NaN
     allowed_tags = ["Pronoun", "DET"]
     word_df[measures["first_person"]] = word_df[measures["first_person"]].where(word_df[measures["part_of_speech"]].isin(allowed_tags), np.nan)
@@ -430,7 +498,7 @@ def calculate_first_person_percentage(text, lang='en'):
     if total_tokens == 0:
         return np.nan
 
-    first_person_count = sum(1 for token in doc if token.text.lower() in FIRST_PERSON_PRONOUNS_T[lang])
+    first_person_count = sum(1 for token in doc if token.text.lower() in FIRST_PERSON_PRONOUNS_T_LOWER[lang])
     
     return (first_person_count / total_tokens) * 100
 
@@ -728,12 +796,24 @@ def get_pos_tag(df_list, text_list, measures, lang="en"):
     finally:
         return df_list
 
-def get_sentiment(df_list, text_list, measures, lang='en'):
+def get_sentiment(
+    df_list,
+    text_list,
+    measures,
+    lang='en',
+    summary_sentiment_alpha: float = DEFAULT_SUMMARY_SENTIMENT_ALPHA,
+    summary_sentiment_eps: float = DEFAULT_SUMMARY_SENTIMENT_EPS,
+):
     """
     ------------------------------------------------------------------------------------------------------
 
     This function calculates sentiment scores of the input text using
      multilingual XLM-R (main output columns) and VADER (extra *_vader columns).
+     Summary sentiment is aggregated from turn-level sentiment using
+     weighted averaging over turns:
+     w_i = ((l_i + eps)^alpha) / sum_j((l_j + eps)^alpha),
+     p_c = sum_i w_i * p_{i,c},
+     where l_i is the token count of turn i.
 
     Parameters:
     ...........
@@ -743,6 +823,10 @@ def get_sentiment(df_list, text_list, measures, lang='en'):
         List of transcribed text.
     measures: dict
         A dictionary containing the names of the columns in the output dataframes.
+    summary_sentiment_alpha: float
+        Length-strength weight parameter (alpha). Default is 0.0 (uniform weights).
+    summary_sentiment_eps: float
+        Small constant added to turn lengths before exponentiation.
 
     Returns:
     ...........
@@ -758,15 +842,19 @@ def get_sentiment(df_list, text_list, measures, lang='en'):
         
         sentiment = get_multilingual_sentiment_analyzer()
         vader_sentiment = get_vader_sentiment_analyzer()
-        cols = [measures["neg"], measures["neu"], measures["pos"], measures["compound"], measures["speech_mattr_5"], measures["speech_mattr_10"], measures["speech_mattr_25"], measures["speech_mattr_50"], measures["speech_mattr_100"]]
+        sentiment_cols = [measures["neg"], measures["neu"], measures["pos"], measures["compound"]]
+        mattr_cols = [measures["speech_mattr_5"], measures["speech_mattr_10"], measures["speech_mattr_25"], measures["speech_mattr_50"], measures["speech_mattr_100"]]
+        cols = sentiment_cols + mattr_cols
         vader_cols = [
             VADER_SENTIMENT_COLS["neg"],
             VADER_SENTIMENT_COLS["neu"],
             VADER_SENTIMENT_COLS["pos"],
             VADER_SENTIMENT_COLS["compound"],
         ]
+        turn_token_counts: Dict[int, float] = {}
 
         for idx, u in enumerate(turn_list):
+            turn_token_counts[idx] = _count_turn_tokens(u, sentiment.tokenizer)
             try:
                 sentiment_dict = sentiment.polarity_scores(u)
                 vader_dict = vader_sentiment.polarity_scores(u)
@@ -778,11 +866,37 @@ def get_sentiment(df_list, text_list, measures, lang='en'):
                 logger.info(f"Error in sentiment analysis: {e}")
                 continue
 
-        sentiment_dict = sentiment.polarity_scores(full_text)
-        vader_dict = vader_sentiment.polarity_scores(full_text)
+        turn_for_summary = turn_df.copy()
+        turn_for_summary[_TURN_SENTIMENT_TOKEN_COUNT_COL] = pd.Series(turn_token_counts, dtype=float)
+
+        sentiment_dict = _aggregate_turn_sentiment_scores(
+            turn_for_summary,
+            length_col=_TURN_SENTIMENT_TOKEN_COUNT_COL,
+            neg_col=measures["neg"],
+            neu_col=measures["neu"],
+            pos_col=measures["pos"],
+            alpha=summary_sentiment_alpha,
+            eps=summary_sentiment_eps,
+        )
+        if sentiment_dict is None:
+            sentiment_dict = sentiment.polarity_scores(full_text)
+
+        vader_dict = _aggregate_turn_sentiment_scores(
+            turn_for_summary,
+            length_col=_TURN_SENTIMENT_TOKEN_COUNT_COL,
+            neg_col=VADER_SENTIMENT_COLS["neg"],
+            neu_col=VADER_SENTIMENT_COLS["neu"],
+            pos_col=VADER_SENTIMENT_COLS["pos"],
+            alpha=summary_sentiment_alpha,
+            eps=summary_sentiment_eps,
+        )
+        if vader_dict is None:
+            vader_dict = vader_sentiment.polarity_scores(full_text)
+
         mattrs = [get_mattr(full_text, lemmatizer, window_size=ws) for ws in [5, 10, 25, 50, 100]]
 
-        summ_df.loc[0, cols] = _sentiment_values(sentiment_dict) + mattrs
+        summ_df.loc[0, sentiment_cols] = _sentiment_values(sentiment_dict)
+        summ_df.loc[0, mattr_cols] = mattrs
         summ_df.loc[0, vader_cols] = _sentiment_values(vader_dict)
         df_list = [word_df, turn_df, summ_df]
     except Exception as e:
