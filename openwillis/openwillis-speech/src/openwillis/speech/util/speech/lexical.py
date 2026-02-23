@@ -87,10 +87,10 @@ PRESENT = ["VBP", "VBZ"]
 PAST = ["VBD", "VBN"]
 
 VADER_SENTIMENT_COLS = {
-    "neg": "sentiment_neg_vader",
-    "neu": "sentiment_neu_vader",
-    "pos": "sentiment_pos_vader",
-    "compound": "sentiment_overall_vader",
+    "neg": "sentiment_vader_neg",
+    "neu": "sentiment_vader_neu",
+    "pos": "sentiment_vader_pos",
+    "compound": "sentiment_vader_overall",
 }
 
 FIRST_PERSON_VADER_COLS = {
