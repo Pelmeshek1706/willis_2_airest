@@ -103,6 +103,7 @@ DEFAULT_SUMMARY_SENTIMENT_EPS = 1e-8
 _TURN_SENTIMENT_TOKEN_COUNT_COL = "__turn_sentiment_token_count"
 _SPACY_BATCH_SIZE_TURNS = 64
 _SPACY_BATCH_SIZE_WORDS = 256
+MATTR_WINDOWS = (5, 10, 25, 50, 100)
 
 
 def _normalize_lang(lang: Optional[str]) -> str:
@@ -351,6 +352,51 @@ def _aggregate_turn_sentiment_scores(
     }
 
 
+def _extract_mattr_lemmas(text, lemmatizer) -> List[str]:
+    text = text if isinstance(text, str) else ("" if text is None else str(text))
+    if not text.strip():
+        return []
+
+    doc = lemmatizer(text)
+    lemmas: List[str] = []
+    for token in doc:
+        if token.is_space or token.is_punct:
+            continue
+        lemma = token.lemma_.strip().lower()
+        if not lemma:
+            continue
+        if lemma == "-pron-":
+            lemma = token.text.strip().lower()
+        if lemma:
+            lemmas.append(lemma)
+    return lemmas
+
+
+def get_mattrs(text, lemmatizer, window_sizes=MATTR_WINDOWS):
+    """Compute MATTR for multiple windows using a single tokenize/lemmatize pass."""
+    if not window_sizes:
+        return []
+
+    lemmas = _extract_mattr_lemmas(text, lemmatizer)
+    if not lemmas:
+        return [np.nan] * len(window_sizes)
+
+    lex_richness = LexicalRichness(" ".join(lemmas))
+    if lex_richness.words <= 0:
+        return [np.nan] * len(window_sizes)
+
+    mattrs: List[float] = []
+    for ws in window_sizes:
+        try:
+            ws_int = max(1, int(ws))
+        except Exception:
+            mattrs.append(np.nan)
+            continue
+        mattrs.append(lex_richness.mattr(window_size=min(ws_int, lex_richness.words)))
+
+    return mattrs
+
+
 def get_mattr(text, lemmatizer, window_size=50):
     """
     ------------------------------------------------------------------------------------------------------
@@ -375,18 +421,7 @@ def get_mattr(text, lemmatizer, window_size=50):
     ------------------------------------------------------------------------------------------------------
     """
 
-    words = nltk.word_tokenize(text) # [list of words] can be ua, so not specific to en 
-    words = [w.translate(str.maketrans('', '', string.punctuation)).lower() for w in words]
-    words = [w for w in words if w != '']
-    words_texts = [token.lemma_ for token in lemmatizer(' '.join(words))]
-    filter_punc = " ".join(words_texts)
-    mattr = np.nan
-
-    lex_richness = LexicalRichness(filter_punc)
-    if lex_richness.words > 0:
-        mattr = lex_richness.mattr(window_size=min(window_size, lex_richness.words))
-
-    return mattr
+    return get_mattrs(text, lemmatizer, window_sizes=(window_size,))[0]
 
 def get_tag(word_df, word_list, measures, lang='en', nlp=None):
     """
@@ -910,7 +945,7 @@ def get_sentiment(
             try:
                 sentiment_dict = sentiment.polarity_scores(u)
                 vader_dict = vader_sentiment.polarity_scores(u)
-                mattrs = [get_mattr(u, lemmatizer, window_size=ws) for ws in [5, 10, 25, 50, 100]]
+                mattrs = get_mattrs(u, lemmatizer, window_sizes=MATTR_WINDOWS)
                 turn_df.loc[idx, cols] = _sentiment_values(sentiment_dict) + mattrs
                 turn_df.loc[idx, vader_cols] = _sentiment_values(vader_dict)
 
@@ -945,7 +980,7 @@ def get_sentiment(
         # if vader_dict is None:
         vader_dict = vader_sentiment.polarity_scores(full_text)
 
-        mattrs = [get_mattr(full_text, lemmatizer, window_size=ws) for ws in [5, 10, 25, 50, 100]]
+        mattrs = get_mattrs(full_text, lemmatizer, window_sizes=MATTR_WINDOWS)
 
         summ_df.loc[0, sentiment_cols] = _sentiment_values(sentiment_dict)
         summ_df.loc[0, mattr_cols] = mattrs
