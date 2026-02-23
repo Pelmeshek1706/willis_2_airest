@@ -5,6 +5,7 @@
 import pandas as pd
 import numpy as np
 import logging
+from functools import lru_cache
 
 import nltk
 import string
@@ -19,6 +20,35 @@ ukrainian_hierarchy = [ # add 'ь'
     "зсжшщ",       # фрикативні
     "бвгґдкптфхцч"  # змичні (решта приголосних)
 ]
+
+_PUNCT_TRANSLATOR = str.maketrans("", "", string.punctuation)
+
+
+def _normalize_syllable_lang(lang):
+    normalized = (lang or "en").lower()
+    return "uk" if normalized in {"ua", "uk"} else "en"
+
+
+@lru_cache(maxsize=2)
+def _get_syllable_tokenizer(lang):
+    if lang == "uk":
+        return nltk.tokenize.SyllableTokenizer(lang="uk", sonority_hierarchy=ukrainian_hierarchy)
+    return nltk.tokenize.SyllableTokenizer()
+
+
+def _syllable_tokens(text):
+    clean_text = text.translate(_PUNCT_TRANSLATOR).lower()
+    if not clean_text.strip():
+        return []
+    stripped = clean_text.strip()
+    # Fast path for the hot word-level loop where inputs are single tokens.
+    if stripped == clean_text and " " not in stripped and "\t" not in stripped and "\n" not in stripped:
+        return [stripped]
+    return [tok for tok in nltk.word_tokenize(clean_text) if tok]
+
+
+def _count_syllables_from_tokens(tokens, syllable_tokenizer):
+    return sum(len(syllable_tokenizer.tokenize(token)) for token in tokens)
 
 
 def get_num_of_syllables(text, lang = 'en'):
@@ -41,12 +71,23 @@ def get_num_of_syllables(text, lang = 'en'):
     """
 
 
-    syllable_tokenizer = nltk.tokenize.SyllableTokenizer(lang="uk", sonority_hierarchy=ukrainian_hierarchy) if lang in ['ua', 'uk'] else nltk.tokenize.SyllableTokenizer()
-    text = text.translate(str.maketrans('', '', string.punctuation))  # Remove punctuation
-    tokens = nltk.word_tokenize(text.lower())  # Tokenize the text and convert to lowercase
-    syllables = [syllable_tokenizer.tokenize(token) for token in tokens]
-    
-    return sum(len(token) for token in syllables)
+    normalized_lang = _normalize_syllable_lang(lang)
+    syllable_tokenizer = _get_syllable_tokenizer(normalized_lang)
+    text = text if isinstance(text, str) else ("" if text is None else str(text))
+    tokens = _syllable_tokens(text)
+
+    return _count_syllables_from_tokens(tokens, syllable_tokenizer)
+
+
+def get_num_of_syllables_batch(text_list, lang='en'):
+    normalized_lang = _normalize_syllable_lang(lang)
+    syllable_tokenizer = _get_syllable_tokenizer(normalized_lang)
+    output = []
+    for text in text_list:
+        norm_text = text if isinstance(text, str) else ("" if text is None else str(text))
+        tokens = _syllable_tokens(norm_text)
+        output.append(_count_syllables_from_tokens(tokens, syllable_tokenizer))
+    return output
 
 def calculate_pause_features_for_word(word_df, df_diff, word_list, turn_index, measures, lang):
     """
@@ -79,8 +120,7 @@ def calculate_pause_features_for_word(word_df, df_diff, word_list, turn_index, m
     turn_starts = [pindex[0] for pindex in turn_index]
     word_df[measures["word_pause"]] = df_diff[measures["pause"]].where(~df_diff[measures["old_index"]].isin(turn_starts), np.nan)
     
-    # word_df[measures["num_syllables"]] = pd.Series(word_list).apply(get_num_of_syllables)
-    word_df[measures["num_syllables"]] = pd.Series(word_list).apply(lambda x: get_num_of_syllables(x, lang=lang))
+    word_df[measures["num_syllables"]] = pd.Series(get_num_of_syllables_batch(word_list, lang=lang))
     return word_df
 
 def calculate_pause_features_for_turn(df_diff, df, text_level, index_list, time_index, measures, language):
@@ -114,7 +154,7 @@ def calculate_pause_features_for_turn(df_diff, df, text_level, index_list, time_
 
     ------------------------------------------------------------------------------------------------------
     """
-
+    turn_syllable_counts = get_num_of_syllables_batch(text_level, lang=language)
     for j, index in enumerate(index_list):
         try:
             rng = range(index[0], index[1] + 1)
@@ -134,7 +174,7 @@ def calculate_pause_features_for_turn(df_diff, df, text_level, index_list, time_
                 df.loc[j, measures["speech_percentage"]] = 100 * (1 - np.sum(pauses) / (60 * turn_duration))
 
                 if language in measures["english_langs"] or language in ['uk', 'ua']:
-                    syllable_rate = (get_num_of_syllables(text_level[j], lang=language) / turn_duration)
+                    syllable_rate = (turn_syllable_counts[j] / turn_duration)
                     df.loc[j, measures["syllable_rate"]] = syllable_rate
 
                 df.loc[j, measures["word_rate"]] = len(turn_data) / turn_duration
