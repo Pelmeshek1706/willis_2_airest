@@ -308,6 +308,61 @@ def filter_json_transcribe_aws(item_data, measures):
 
     return filter_json
 
+def _default_phrase_payload(idxs, text, words_texts):
+    if not idxs:
+        return [], []
+
+    fallback_text = (text or "").strip()
+    if not fallback_text:
+        fallback_text = " ".join(words_texts).strip()
+    return [(idxs[0], idxs[-1])], [fallback_text]
+
+def _extract_phrase_payload(item, idxs, words_texts, text):
+    fallback_ids, fallback_texts = _default_phrase_payload(idxs, text, words_texts)
+    raw_phrases = item.get("phrases")
+    if not isinstance(raw_phrases, list) or len(raw_phrases) == 0:
+        return fallback_ids, fallback_texts
+
+    parsed_ranges = []
+    parsed_texts = []
+    for phrase in raw_phrases:
+        if not isinstance(phrase, dict):
+            continue
+
+        try:
+            word_start = int(phrase.get("word_start"))
+            word_end = int(phrase.get("word_end"))
+        except (TypeError, ValueError):
+            continue
+
+        if word_start < 0 or word_end < word_start or word_end >= len(idxs):
+            continue
+
+        phrase_text = (phrase.get("text") or "").strip()
+        if not phrase_text:
+            phrase_text = " ".join(words_texts[word_start:word_end + 1]).strip()
+        parsed_ranges.append((word_start, word_end))
+        parsed_texts.append(phrase_text)
+
+    if len(parsed_ranges) == 0:
+        return fallback_ids, fallback_texts
+
+    ordering = sorted(range(len(parsed_ranges)), key=lambda pos: (parsed_ranges[pos][0], parsed_ranges[pos][1]))
+    parsed_ranges = [parsed_ranges[pos] for pos in ordering]
+    parsed_texts = [parsed_texts[pos] for pos in ordering]
+
+    expected_start = 0
+    for word_start, word_end in parsed_ranges:
+        if word_start != expected_start:
+            return fallback_ids, fallback_texts
+        expected_start = word_end + 1
+
+    if expected_start != len(idxs):
+        return fallback_ids, fallback_texts
+
+    phrase_ids = [(idxs[word_start], idxs[word_end]) for word_start, word_end in parsed_ranges]
+    return phrase_ids, parsed_texts
+
 def create_turns_whisper(item_data, measures):
     data = []
     has_speaker = any(("speaker" in s and s["speaker"] is not None) for s in item_data)
@@ -315,17 +370,20 @@ def create_turns_whisper(item_data, measures):
     if not has_speaker:
         # Каждый сегмент = отдельный turn
         for item in item_data:
-            idxs = [w[measures["old_index"]] for w in item.get("words", []) if "start" in w]
+            words = [w for w in item.get("words", []) if "start" in w]
+            idxs = [w[measures["old_index"]] for w in words]
             if not idxs:
                 continue
             text = (item.get("text") or "").strip()
+            words_texts = [w.get("word", "") for w in words]
+            phrase_ids, phrase_texts = _extract_phrase_payload(item, idxs, words_texts, text)
             data.append({
                 measures['utterance_ids']: (idxs[0], idxs[-1]),
                 measures['utterance_text']: text,
-                measures['phrases_ids']: [(idxs[0], idxs[-1])],
-                measures['phrases_texts']: [text],
+                measures['phrases_ids']: phrase_ids,
+                measures['phrases_texts']: phrase_texts,
                 measures['words_ids']: idxs,
-                measures['words_texts']: [w['word'] for w in item.get('words', []) if 'start' in w],
+                measures['words_texts']: words_texts,
                 measures['speaker_label']: item.get('speaker')
             })
         return pd.DataFrame(data)
@@ -339,17 +397,20 @@ def create_turns_whisper(item_data, measures):
 
     for item in item_data:
         speaker = item.get("speaker")
-        idxs = [w[measures["old_index"]] for w in item.get("words", []) if "start" in w]
+        words = [w for w in item.get("words", []) if "start" in w]
+        idxs = [w[measures["old_index"]] for w in words]
         text = (item.get("text") or "").strip()
+        words_texts_item = [w.get("word", "") for w in words]
+        phrase_ids_item, phrase_texts_item = _extract_phrase_payload(item, idxs, words_texts_item, text)
 
         if speaker == current_speaker:
-            aggregated_text += " " + text
+            if text:
+                aggregated_text = f"{aggregated_text} {text}".strip() if aggregated_text else text
             aggregated_ids.extend(idxs)
             word_ids.extend(idxs)
-            word_texts.extend([w['word'] for w in item.get('words', []) if 'start' in w])
-            if idxs:
-                phrase_ids.append((idxs[0], idxs[-1]))
-                phrase_texts.append(text)
+            word_texts.extend(words_texts_item)
+            phrase_ids.extend(phrase_ids_item)
+            phrase_texts.extend(phrase_texts_item)
         else:
             if aggregated_ids:
                 data.append({
@@ -366,9 +427,9 @@ def create_turns_whisper(item_data, measures):
             aggregated_text = text
             aggregated_ids = idxs.copy()
             word_ids = idxs.copy()
-            word_texts = [w['word'] for w in item.get('words', []) if 'start' in w]
-            phrase_ids = [(idxs[0], idxs[-1])] if idxs else []
-            phrase_texts = [text] if idxs else []
+            word_texts = words_texts_item.copy()
+            phrase_ids = phrase_ids_item.copy()
+            phrase_texts = phrase_texts_item.copy()
 
     if aggregated_ids:
         data.append({

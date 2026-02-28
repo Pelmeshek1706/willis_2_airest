@@ -32,6 +32,7 @@ except Exception:  # pragma: no cover
 
 _TOKEN_RE = re.compile(r"\S+", re.UNICODE)
 _RX_MULTI_SPACE = re.compile(r"\s+")
+_SENTENCE_END_TOKEN_RE = re.compile(r"[.!?…]+(?:[\"'”’»)\]]*)$", re.UNICODE)
 
 
 def _collapse_ws(value: Any) -> str:
@@ -63,6 +64,13 @@ def _normalize_confidence(value: Any) -> float:
 
 def _tokenize(text: str) -> List[str]:
     return _TOKEN_RE.findall(text)
+
+
+def _is_sentence_terminal(token: str) -> bool:
+    token = _collapse_ws(token)
+    if not token:
+        return False
+    return bool(_SENTENCE_END_TOKEN_RE.search(token))
 
 
 def _sanitize_file_stem(value: Any, default: str = "file") -> str:
@@ -130,6 +138,40 @@ def _build_even_word_timestamps(
     return words
 
 
+def _build_segment_phrases(words: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    if not words:
+        return []
+
+    boundaries: List[tuple[int, int]] = []
+    phrase_start = 0
+    for word_index, word in enumerate(words):
+        if _is_sentence_terminal(word.get("word", "")):
+            boundaries.append((phrase_start, word_index))
+            phrase_start = word_index + 1
+
+    if phrase_start < len(words):
+        boundaries.append((phrase_start, len(words) - 1))
+
+    phrases: List[Dict[str, Any]] = []
+    for phrase_id, (word_start, word_end) in enumerate(boundaries):
+        phrase_tokens = [
+            _collapse_ws(words[token_index].get("word", ""))
+            for token_index in range(word_start, word_end + 1)
+        ]
+        phrase_text = _collapse_ws(" ".join(token for token in phrase_tokens if token))
+        phrases.append(
+            {
+                "id": phrase_id,
+                "text": phrase_text,
+                "start": float(words[word_start]["start"]),
+                "end": float(words[word_end]["end"]),
+                "word_start": word_start,
+                "word_end": word_end,
+            }
+        )
+    return phrases
+
+
 def _choose_text(row: pd.Series, primary_col: str, fallback_col: str) -> str:
     primary = _collapse_ws(row.get(primary_col)) if primary_col in row else ""
     if primary:
@@ -168,6 +210,7 @@ def convert_table_to_whisper_like(
     conf_col: str = "Confidence",
     language: str = "uk",
     align_start_to_prev_end: bool = True,
+    split_phrases: bool = False,
     indent: Optional[int] = 2,
 ) -> None:
     required = [group_col, start_col, end_col]
@@ -253,21 +296,22 @@ def convert_table_to_whisper_like(
             else:
                 avg_logprob = math.log(max(1e-12, row_prob))
 
-            segments.append(
-                {
-                    "id": segment_id,
-                    "seek": 0,
-                    "start": row_start,
-                    "end": row_end,
-                    "text": row_text,
-                    "tokens": [],
-                    "temperature": 0.0,
-                    "avg_logprob": float(avg_logprob),
-                    "compression_ratio": 0.0,
-                    "no_speech_prob": 0.0,
-                    "words": words,
-                }
-            )
+            segment: Dict[str, Any] = {
+                "id": segment_id,
+                "seek": 0,
+                "start": row_start,
+                "end": row_end,
+                "text": row_text,
+                "tokens": [],
+                "temperature": 0.0,
+                "avg_logprob": float(avg_logprob),
+                "compression_ratio": 0.0,
+                "no_speech_prob": 0.0,
+                "words": words,
+            }
+            if split_phrases and words:
+                segment["phrases"] = _build_segment_phrases(words)
+            segments.append(segment)
             if row_text:
                 segment_texts.append(row_text)
 
@@ -318,6 +362,18 @@ def main() -> None:
         help="Disable start alignment to previous end.",
     )
     parser.add_argument("--indent", type=int, default=2)
+    parser.add_argument(
+        "--split_phrases",
+        action="store_true",
+        default=False,
+        help="Add per-segment sentence boundaries to the JSON as segment['phrases'].",
+    )
+    parser.add_argument(
+        "--no_split_phrases",
+        action="store_false",
+        dest="split_phrases",
+        help="Disable sentence-boundary phrase metadata.",
+    )
     args = parser.parse_args()
 
     dataframe = _read_input_table(Path(args.input))
@@ -332,6 +388,7 @@ def main() -> None:
         conf_col=args.conf_col,
         language=args.language,
         align_start_to_prev_end=args.align_start_to_prev_end,
+        split_phrases=args.split_phrases,
         indent=args.indent,
     )
 
