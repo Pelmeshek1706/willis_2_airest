@@ -13,6 +13,7 @@ class LexiconStats:
 
 
 def _to_float(raw: str) -> float | None:
+    """Parse a lexicon score, accepting both dot and comma decimals."""
     value = (raw or "").strip().replace(",", ".")
     if not value:
         return None
@@ -23,6 +24,7 @@ def _to_float(raw: str) -> float | None:
 
 
 def _mean(values: Iterable[float]) -> float | None:
+    """Return the arithmetic mean or None when no values are provided."""
     items = list(values)
     if not items:
         return None
@@ -72,6 +74,7 @@ def load_tonsum_lexicon(path: str | Path) -> Dict[str, float]:
 
 
 def summarize_lexicon(lexicon: Dict[str, float]) -> LexiconStats:
+    """Summarize entry count, phrase count, and max n-gram length."""
     phrase_entries = 0
     max_ngram = 1
     for key in lexicon:

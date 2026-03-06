@@ -53,9 +53,11 @@ class UkrainianMorphNormalizer:
     _UA_WORD_RE = re.compile(r"^[а-щьюяґєії'-]+$", flags=re.IGNORECASE)
 
     def __init__(self) -> None:
+        """Record whether optional simplemma lemmatization is available."""
         self.has_simplemma = simplemma is not None
 
     def lemmatize(self, token: str) -> str:
+        """Return a lowercase lemma for a Ukrainian token when possible."""
         tok = token.lower()
         if not tok:
             return tok
@@ -67,6 +69,7 @@ class UkrainianMorphNormalizer:
         return str(lemma).lower()
 
     def _heuristic_forms(self, token: str) -> List[str]:
+        """Generate conservative stem-like variants for fallback lexicon matching."""
         tok = token.lower()
         out: List[str] = []
         if not self._UA_WORD_RE.match(tok):
@@ -91,6 +94,7 @@ class UkrainianMorphNormalizer:
 
     @staticmethod
     def _unique(values: List[str]) -> List[str]:
+        """Preserve order while removing empty and duplicate values."""
         seen = set()
         unique_values: List[str] = []
         for value in values:
@@ -101,6 +105,7 @@ class UkrainianMorphNormalizer:
         return unique_values
 
     def word_candidates(self, token: str) -> List[str]:
+        """Return normalized lookup candidates for a single token."""
         tok = token.lower()
         lemma = self.lemmatize(tok)
         candidates = [tok, lemma]
@@ -108,6 +113,7 @@ class UkrainianMorphNormalizer:
         return self._unique(candidates)
 
     def phrase_candidates(self, tokens: List[str]) -> List[str]:
+        """Return surface, lemma, and stem-like variants for a token phrase."""
         if not tokens:
             return []
         surface = " ".join(tokens)

@@ -76,6 +76,7 @@ class UkrainianSentimentIntensityAnalyzerImproved:
         lexicon_scale_to_vader: bool = False,
         alpha: float = ALPHA,
     ) -> None:
+        """Load the Ukrainian sentiment lexicon and initialize rule tables."""
         if lexicon_path is None:
             lexicon_path = (
                 Path(__file__).resolve().parent.parent / "data" / "vader_en_openai_uk_only_unweighted.tsv"
@@ -102,6 +103,7 @@ class UkrainianSentimentIntensityAnalyzerImproved:
 
     @staticmethod
     def _dedupe(values: Sequence[str]) -> List[str]:
+        """Preserve order while removing empty and duplicate string variants."""
         seen = set()
         out: List[str] = []
         for value in values:
@@ -112,12 +114,14 @@ class UkrainianSentimentIntensityAnalyzerImproved:
         return out
 
     def _token_forms(self, token: str) -> List[str]:
+        """Return normalized token variants for lexicon and rule lookup."""
         lower = token.lower()
         candidates = [lower]
         candidates.extend(self.normalizer.word_candidates(lower))
         return self._dedupe(candidates)
 
     def _lookup_lexicon_valence(self, token: str) -> float | None:
+        """Look up a token's sentiment valence while skipping control terms."""
         token_lower = token.lower()
         if (
             token_lower in self.BOOSTER_DICT
@@ -143,12 +147,14 @@ class UkrainianSentimentIntensityAnalyzerImproved:
         return None
 
     def _is_booster(self, token: str) -> bool:
+        """Check whether a token acts as an intensity booster or dampener."""
         for form in self._token_forms(token):
             if form in self.BOOSTER_DICT:
                 return True
         return False
 
     def _punctuation_emphasis(self, text: str) -> float:
+        """Estimate additional sentiment emphasis contributed by punctuation."""
         ep_count = min(text.count("!"), 4)
         ep_amplifier = ep_count * 0.292
 
@@ -163,6 +169,7 @@ class UkrainianSentimentIntensityAnalyzerImproved:
         return ep_amplifier + qm_amplifier
 
     def _scalar_inc_dec(self, word: str, valence: float, is_cap_diff: bool) -> float:
+        """Compute the booster adjustment contributed by a nearby modifier."""
         scalar = 0.0
         for form in self._token_forms(word):
             if form in self.BOOSTER_DICT:
@@ -182,6 +189,7 @@ class UkrainianSentimentIntensityAnalyzerImproved:
         return scalar
 
     def _negated(self, input_words: Sequence[str]) -> bool:
+        """Return True when any token variant is recognized as a negation."""
         for word in input_words:
             for form in self._token_forms(str(word)):
                 if form in self.NEGATIONS:
@@ -189,6 +197,7 @@ class UkrainianSentimentIntensityAnalyzerImproved:
         return False
 
     def _negation_check(self, valence: float, words_norm: Sequence[str], start_i: int, i: int) -> float:
+        """Adjust valence according to nearby negation patterns."""
         if start_i == 0:
             if self._negated([words_norm[i - 1]]):
                 valence *= N_SCALAR
@@ -214,6 +223,7 @@ class UkrainianSentimentIntensityAnalyzerImproved:
         return valence
 
     def _special_idioms_check(self, valence: float, words_norm: Sequence[str], i: int) -> float:
+        """Apply idiom-specific overrides and booster phrases around a token."""
         onezero = f"{words_norm[i - 1]} {words_norm[i]}"
         twoonezero = f"{words_norm[i - 2]} {words_norm[i - 1]} {words_norm[i]}"
         twoone = f"{words_norm[i - 2]} {words_norm[i - 1]}"
@@ -241,6 +251,7 @@ class UkrainianSentimentIntensityAnalyzerImproved:
         return valence
 
     def _least_check(self, valence: float, words_norm: Sequence[str], i: int) -> float:
+        """Handle VADER's least-based negation rule for the current token."""
         if i > 1 and words_norm[i - 1] in self.LEAST_TERMS and words_norm[i - 1] not in self.lexicon:
             if words_norm[i - 2] not in self.AT_VERY_TERMS:
                 valence *= N_SCALAR
@@ -257,6 +268,7 @@ class UkrainianSentimentIntensityAnalyzerImproved:
         sentiments: List[float],
         words_norm: Sequence[str],
     ) -> List[float]:
+        """Update the running sentiment list for a single token."""
         is_cap_diff = sentitext.is_cap_diff
         words_and_emoticons = sentitext.words_and_emoticons
         item_lower = item.lower()
@@ -293,6 +305,7 @@ class UkrainianSentimentIntensityAnalyzerImproved:
         return sentiments
 
     def _but_check(self, words_norm: Sequence[str], sentiments: List[float]) -> List[float]:
+        """Reweight sentiments around contrastive conjunctions like 'але'."""
         bi = None
         for idx, word in enumerate(words_norm):
             if word in self.CONTRASTIVE_CONJ:
@@ -314,6 +327,7 @@ class UkrainianSentimentIntensityAnalyzerImproved:
 
     @staticmethod
     def _sift_sentiment_scores(sentiments: List[float]) -> Tuple[float, float, float]:
+        """Split raw sentiment contributions into positive, negative, and neutral totals."""
         pos_sum = 0.0
         neg_sum = 0.0
         neu_count = 0.0
@@ -327,6 +341,7 @@ class UkrainianSentimentIntensityAnalyzerImproved:
         return pos_sum, neg_sum, neu_count
 
     def _score_valence(self, sentiments: List[float], text: str) -> Dict[str, float]:
+        """Convert token-level sentiment contributions into final VADER scores."""
         if sentiments:
             sum_s = float(sum(sentiments))
             punct_emph = self._punctuation_emphasis(text)
@@ -364,6 +379,7 @@ class UkrainianSentimentIntensityAnalyzerImproved:
         }
 
     def polarity_scores(self, text: str) -> Dict[str, float]:
+        """Score Ukrainian text with VADER-style lexical and rule-based heuristics."""
         if text is None:
             text = ""
         text = str(text)

@@ -108,6 +108,7 @@ FUNCTION_WORD_POS = {"PRON", "DET", "ADP", "CCONJ", "SCONJ"}
 
 
 def _normalize_lang(lang: Optional[str]) -> str:
+    """Normalize language hints to the lexical module's supported codes."""
     normalized = (lang or "en").lower().strip()
     if normalized in {"ua", "uk"}:
         return normalized
@@ -115,16 +116,19 @@ def _normalize_lang(lang: Optional[str]) -> str:
 
 
 def _spacy_model_name(lang: str) -> str:
+    """Return the spaCy model name for a normalized language code."""
     return "uk_core_news_sm" if lang in {"ua", "uk"} else "en_core_web_sm"
 
 
 @lru_cache(maxsize=2)
 def _get_spacy_nlp_cached(model_name: str):
+    """Load and cache a lightweight spaCy pipeline for lexical features."""
     # Keep tokenization + POS + morphology while dropping heavy, unused components.
     return spacy.load(model_name, disable=["parser", "ner", "textcat"])
 
 
 def get_spacy_nlp(lang: str = "en"):
+    """Return the cached spaCy pipeline for the requested language."""
     normalized_lang = _normalize_lang(lang)
     return _get_spacy_nlp_cached(_spacy_model_name(normalized_lang))
 
@@ -144,6 +148,7 @@ class MultilingualSentiment:
         batch_size: int = 16,
         device: Optional[str] = None,
     ):
+        """Initialize the transformer sentiment pipeline and runtime device."""
         self._pipe = pipeline(
             "sentiment-analysis",
             model=model_id,
@@ -171,6 +176,7 @@ class MultilingualSentiment:
 
     @staticmethod
     def _label_index_map(model) -> Dict[str, int]:
+        """Map model label ids to the canonical neg/neu/pos positions."""
         id2label = getattr(model.config, "id2label", None) or {}
         mapping: Dict[str, int] = {}
 
@@ -190,6 +196,7 @@ class MultilingualSentiment:
 
     @staticmethod
     def _vader_normalize(score: float, alpha: float = 15.0) -> float:
+        """Project a raw score into the VADER-style compound range."""
         normalized = score / ((score * score + alpha) ** 0.5)
         if normalized < -1.0:
             return -1.0
@@ -199,6 +206,7 @@ class MultilingualSentiment:
 
     @torch.inference_mode()
     def polarity_scores(self, text: str) -> dict:
+        """Score text sentiment, chunking long inputs into overlapping windows."""
         if text is None:
             text = ""
         if not isinstance(text, str):
@@ -263,11 +271,13 @@ class MultilingualSentiment:
 
 @lru_cache(maxsize=1)
 def get_multilingual_sentiment_analyzer() -> MultilingualSentiment:
+    """Instantiate the multilingual transformer sentiment analyzer."""
     return MultilingualSentiment()
 
 
 @lru_cache(maxsize=4)
 def get_vader_sentiment_analyzer(lang: str = "en") -> Any:
+    """Return the language-appropriate VADER sentiment analyzer."""
     normalized_lang = (lang or "en").lower()
     if normalized_lang in {"uk", "ua"}:
         try:
@@ -285,6 +295,7 @@ def get_vader_sentiment_analyzer(lang: str = "en") -> Any:
 
 
 def _sentiment_values(scores: dict) -> List[float]:
+    """Extract sentiment components in neg, neu, pos, compound order."""
     return [
         scores.get("neg", np.nan),
         scores.get("neu", np.nan),
@@ -293,6 +304,7 @@ def _sentiment_values(scores: dict) -> List[float]:
     ]
 
 def _count_turn_tokens(text: str, tokenizer) -> float:
+    """Count tokenizer tokens for a turn without adding special tokens."""
     if text is None:
         return 0.0
     if not isinstance(text, str):
@@ -322,6 +334,7 @@ def _aggregate_turn_sentiment_scores(
     alpha: float = DEFAULT_SUMMARY_SENTIMENT_ALPHA,
     eps: float = DEFAULT_SUMMARY_SENTIMENT_EPS,
 ) -> Optional[Dict[str, float]]:
+    """Aggregate per-turn sentiment columns into a length-weighted summary."""
     required_cols = [length_col, neg_col, neu_col, pos_col]
     if any(c not in turn_df.columns for c in required_cols):
         return None
@@ -354,6 +367,7 @@ def _aggregate_turn_sentiment_scores(
 
 
 def _extract_mattr_lemmas(text, lemmatizer) -> List[str]:
+    """Extract normalized lemma tokens for MATTR calculations."""
     text = text if isinstance(text, str) else ("" if text is None else str(text))
     if not text.strip():
         return []
@@ -576,6 +590,7 @@ def calculate_first_person_percentage(text, lang='en', nlp=None):
     return (first_person_count / total_tokens) * 100
 
 def calculate_first_person_percentage_batch(texts, lang='en', nlp=None, batch_size=_SPACY_BATCH_SIZE_TURNS):
+    """Compute first-person pronoun ratios for a batch of texts."""
     normalized_lang = _normalize_lang(lang)
     nlp = nlp or get_spacy_nlp(normalized_lang)
     first_person_pronouns = FIRST_PERSON_PRONOUNS_T_LOWER.get(normalized_lang, FIRST_PERSON_PRONOUNS_T_LOWER["en"])
@@ -675,6 +690,7 @@ def get_first_person_summ(summ_df, turn_df, full_text, measures, lang='en', nlp=
         out_neg_col: str,
         out_overall_col: str,
     ) -> None:
+        """Populate summary-level first-person sentiment columns from turn scores."""
         if len(turn_df) > 0:
             if out_pos_col not in turn_df.columns or out_neg_col not in turn_df.columns:
                 fp_pos, fp_neg = calculate_first_person_sentiment(
@@ -761,6 +777,7 @@ def get_first_person_summ(summ_df, turn_df, full_text, measures, lang='en', nlp=
 #     return pos_tags
 
 def count_space_tokens(text, lang='en', nlp=None):
+    """Count tokens that spaCy tags as whitespace."""
     normalized_lang = _normalize_lang(lang)
     nlp = nlp or get_spacy_nlp(normalized_lang)
     text = text if isinstance(text, str) else ("" if text is None else str(text))
@@ -769,6 +786,7 @@ def count_space_tokens(text, lang='en', nlp=None):
 
 
 def _extract_pos_and_verb_tense(token, lang: str):
+    """Map a token to normalized POS and verb-tense labels."""
     if lang in {'ua', 'uk'}:
         pos = TAG_DICT_T[lang].get(token.pos_, token.pos_)
         if token.pos_ in {"VERB", "AUX"}:

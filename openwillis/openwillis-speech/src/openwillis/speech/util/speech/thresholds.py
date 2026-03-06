@@ -38,10 +38,12 @@ DEFAULT_THRESHOLD_PROFILE = "paper_strict"
 
 
 def available_profile_names() -> List[str]:
+    """Return the names of the registered sentiment threshold profiles."""
     return sorted(THRESHOLD_PROFILES.keys())
 
 
 def get_threshold_profile(name: str) -> ThresholdProfile:
+    """Look up a threshold profile by name."""
     try:
         return THRESHOLD_PROFILES[name]
     except KeyError as exc:  # pragma: no cover
@@ -50,6 +52,7 @@ def get_threshold_profile(name: str) -> ThresholdProfile:
 
 
 def classify_compound(compound: float, profile: ThresholdProfile) -> str:
+    """Classify a compound sentiment score with the supplied thresholds."""
     if compound >= profile.pos:
         return "positive"
     if compound <= profile.neg:

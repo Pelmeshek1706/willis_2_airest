@@ -25,18 +25,21 @@ _PUNCT_TRANSLATOR = str.maketrans("", "", string.punctuation)
 
 
 def _normalize_syllable_lang(lang):
+    """Map incoming language aliases to the supported syllable tokenizers."""
     normalized = (lang or "en").lower()
     return "uk" if normalized in {"ua", "uk"} else "en"
 
 
 @lru_cache(maxsize=2)
 def _get_syllable_tokenizer(lang):
+    """Create the syllable tokenizer for the requested language."""
     if lang == "uk":
         return nltk.tokenize.SyllableTokenizer(lang="uk", sonority_hierarchy=ukrainian_hierarchy)
     return nltk.tokenize.SyllableTokenizer()
 
 
 def _syllable_tokens(text):
+    """Normalize text and split it into tokens before syllable counting."""
     clean_text = text.translate(_PUNCT_TRANSLATOR).lower()
     if not clean_text.strip():
         return []
@@ -48,6 +51,7 @@ def _syllable_tokens(text):
 
 
 def _count_syllables_from_tokens(tokens, syllable_tokenizer):
+    """Count syllables across a token sequence using the provided tokenizer."""
     return sum(len(syllable_tokenizer.tokenize(token)) for token in tokens)
 
 
@@ -106,6 +110,7 @@ def get_num_of_syllables(text, lang = 'en'):
 
 
 def get_num_of_syllables_batch(text_list, lang='en'):
+    """Count syllables for each text item in a batch."""
     normalized_lang = _normalize_syllable_lang(lang)
     syllable_tokenizer = _get_syllable_tokenizer(normalized_lang)
     output = []

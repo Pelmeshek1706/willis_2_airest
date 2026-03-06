@@ -135,6 +135,7 @@ def download_nltk_resources():
         nltk.download("averaged_perceptron_tagger")
 
 def download_spacy_models():
+    """Ensure the English and Ukrainian spaCy models are available locally."""
     models = ["uk_core_news_sm", "en_core_web_sm"]
     for model in models:
         try:
@@ -144,6 +145,7 @@ def download_spacy_models():
             subprocess.run([sys.executable, "-m", "spacy", "download", model], check=True)
 
 def download_nltk_resources():
+    """Ensure the NLTK punkt and POS-tagger resources are installed."""
     resources = ["punkt", "averaged_perceptron_tagger"]
     for resource in resources:
         try:
@@ -152,6 +154,7 @@ def download_nltk_resources():
             nltk.download(resource)
 
 def download_ua_resources():
+    """Download the NLP resources required by the Ukrainian text pipeline."""
     # try:
     #     nltk.data.find("tokenizers/punkt")
     #     nltk.download('punkt_tab')
@@ -309,6 +312,7 @@ def filter_json_transcribe_aws(item_data, measures):
     return filter_json
 
 def _default_phrase_payload(idxs, text, words_texts):
+    """Build a fallback phrase span and text when Whisper phrases are missing."""
     if not idxs:
         return [], []
 
@@ -318,6 +322,7 @@ def _default_phrase_payload(idxs, text, words_texts):
     return [(idxs[0], idxs[-1])], [fallback_text]
 
 def _extract_phrase_payload(item, idxs, words_texts, text):
+    """Extract Whisper phrase spans/text or fall back to a full-segment payload."""
     fallback_ids, fallback_texts = _default_phrase_payload(idxs, text, words_texts)
     raw_phrases = item.get("phrases")
     if not isinstance(raw_phrases, list) or len(raw_phrases) == 0:
@@ -364,6 +369,7 @@ def _extract_phrase_payload(item, idxs, words_texts, text):
     return phrase_ids, parsed_texts
 
 def create_turns_whisper(item_data, measures):
+    """Convert Whisper segments into the turn-level dataframe schema."""
     data = []
     has_speaker = any(("speaker" in s and s["speaker"] is not None) for s in item_data)
 

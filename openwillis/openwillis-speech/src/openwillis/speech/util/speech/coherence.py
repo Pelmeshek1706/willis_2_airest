@@ -87,6 +87,7 @@ _BERT_CACHE: Dict[str, Dict[str, object]] = {}
 
 
 def _cache_get(cache: "OrderedDict[str, torch.Tensor]", key: str) -> Optional[torch.Tensor]:
+    """Fetch a cached tensor and refresh its LRU position."""
     value = cache.get(key)
     if value is not None:
         cache.move_to_end(key)
@@ -94,6 +95,7 @@ def _cache_get(cache: "OrderedDict[str, torch.Tensor]", key: str) -> Optional[to
 
 
 def _cache_put(cache: "OrderedDict[str, torch.Tensor]", key: str, value: torch.Tensor) -> None:
+    """Insert a tensor into the LRU cache and evict the oldest entries."""
     cache[key] = value
     cache.move_to_end(key)
     while len(cache) > TOKEN_CACHE_SIZE:
@@ -101,6 +103,7 @@ def _cache_put(cache: "OrderedDict[str, torch.Tensor]", key: str, value: torch.T
 
 
 def _normalize_embeddings(embeddings: np.ndarray) -> np.ndarray:
+    """L2-normalize embedding rows, returning an empty array for invalid input."""
     arr = np.asarray(embeddings, dtype=np.float32)
     if arr.ndim != 2 or arr.shape[0] == 0:
         return np.zeros((0, 0), dtype=np.float32)
@@ -110,6 +113,7 @@ def _normalize_embeddings(embeddings: np.ndarray) -> np.ndarray:
 
 
 def _cosine_for_offset(normalized_embeddings: np.ndarray, k: int) -> np.ndarray:
+    """Compute cosine similarity between embeddings separated by k positions."""
     if k <= 0:
         raise ValueError("k must be > 0")
     n = normalized_embeddings.shape[0]
@@ -119,6 +123,7 @@ def _cosine_for_offset(normalized_embeddings: np.ndarray, k: int) -> np.ndarray:
 
 
 def _word_coherence_from_embeddings(word_embeddings: np.ndarray) -> Tuple[List[float], List[float], List[float], Dict[int, List[float]]]:
+    """Derive per-word coherence windows and variability metrics from embeddings."""
     normalized = _normalize_embeddings(word_embeddings)
     n = int(normalized.shape[0])
     if n == 0:
@@ -158,6 +163,7 @@ def _word_coherence_from_embeddings(word_embeddings: np.ndarray) -> Tuple[List[f
 
 
 def _phrase_tangeniality_from_embeddings(phrase_embeddings: np.ndarray) -> Tuple[float, float]:
+    """Compute first- and second-order phrase tangentiality scores."""
     normalized = _normalize_embeddings(phrase_embeddings)
     n = int(normalized.shape[0])
     if n == 0:
@@ -179,6 +185,7 @@ def _phrase_tangeniality_from_embeddings(phrase_embeddings: np.ndarray) -> Tuple
 
 
 def _get_backend() -> str:
+    """Resolve the configured coherence backend, defaulting invalid values to gemma."""
     backend = (COHERENCE_BACKEND or "gemma").strip().lower()
     if backend not in {"gemma", "bert"}:
         logger.warning("Unknown COHERENCE_BACKEND=%s; defaulting to gemma.", backend)
@@ -200,6 +207,7 @@ def _load_sentence_encoder(device: torch.device) -> SentenceTransformer:
 
 
 def _resolve_dtype(device: torch.device) -> torch.dtype:
+    """Choose a safe inference dtype for the selected torch device."""
     if device.type == "cuda":
         return torch.bfloat16
     if device.type == "mps":
@@ -272,6 +280,7 @@ def get_model_bundle(language: str, device_hint: Optional[str] = None) -> Dict[s
 
 
 def _resolve_bert_model_id(language: str, measures: Dict[str, object]) -> Optional[str]:
+    """Resolve the token-level BERT model id for the requested language."""
     if language in measures.get("english_langs", []):
         return BERT_EN_MODEL_ID
     if language in measures.get("supported_langs_bert", []):
@@ -280,6 +289,7 @@ def _resolve_bert_model_id(language: str, measures: Dict[str, object]) -> Option
 
 
 def _resolve_sentence_encoder_id(language: str, measures: Dict[str, object]) -> Optional[str]:
+    """Resolve the sentence-embedding model id for the requested language."""
     if language in measures.get("english_langs", []):
         return BERT_SENTENCE_EN_MODEL_ID
     if language in measures.get("supported_langs_sentence_embeddings", []):
@@ -352,6 +362,7 @@ def get_word_embeddings(word_list, sentence_encoder):
         return np.zeros((0, 0), dtype=np.float32)
 
     def _safe_encode(bs: int) -> np.ndarray:
+        """Encode the current word batch with a lower-bounded batch size."""
         return _encode_in_chunks(sentence_encoder, word_list, max(bs, 1))
 
     try:
@@ -446,6 +457,7 @@ def get_word_embeddings_bert(word_list, tokenizer: BertTokenizer, model: BertMod
     device = next(model.parameters()).device if model is not None else torch.device("cpu")
 
     def _embed_chunk(chunk: List[str]) -> np.ndarray:
+        """Embed a chunk of tokens with BERT and mean-pool the hidden states."""
         inputs = tokenizer(chunk, return_tensors="pt", padding=True, truncation=True)
         inputs = {k: v.to(device) for k, v in inputs.items()}
         with torch.no_grad():
@@ -617,6 +629,7 @@ def get_word_coherence(df_list, utterances_speaker, min_coherence_turn_length, l
         chunk_rows = []
 
         def _process_chunk(rows_chunk):
+            """Compute coherence metrics for a buffered chunk of utterance rows."""
             if not rows_chunk:
                 return
 
@@ -768,6 +781,7 @@ def calculate_perplexity(
         attention_mask = attention_mask[:, :effective_len]
 
     def _teacher_forced_perplexity(ids: torch.Tensor, mask: torch.Tensor) -> float:
+        """Compute full-sequence teacher-forced perplexity for token ids."""
         with torch.inference_mode():
             outputs = model(input_ids=ids, attention_mask=mask)
             logits = outputs.logits[:, :-1, :].float()
@@ -782,6 +796,7 @@ def calculate_perplexity(
         return float(torch.exp(nll).item())
 
     def _windowed_perplexity(ids: torch.Tensor, k: int) -> float:
+        """Estimate next-token perplexity from limited left-context windows."""
         ids = ids[:, :min(ids.size(1), PPL_MAX_TOKENS)]
         seq_len = ids.size(1)
         if seq_len < 2:
@@ -924,6 +939,7 @@ def calculate_perplexity_bert(
     pad_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else 0
 
     def _adjust_bounds(i, window_size, seq_len, max_len):
+        """Clamp a masked-LM context window to sequence and model limits."""
         start = max(0, i - window_size)
         end = min(seq_len - 1, i + window_size)
         L = end - start + 1
@@ -938,6 +954,7 @@ def calculate_perplexity_bert(
         return int(start), int(end)
 
     def _batched_log_probs_for_window(window_size, batch_size=64):
+        """Collect masked-token log probabilities for a fixed context window."""
         all_log_probs = []
         indices = list(range(seq_len))
         with torch.no_grad():
@@ -1383,6 +1400,7 @@ def _encode_in_chunks(
 
     return np.vstack(outputs)
 def _release_accelerator_cache() -> None:
+    """Clear CUDA or MPS caches after heavy coherence computations."""
     has_accelerator = False
     if torch.cuda.is_available():
         has_accelerator = True
@@ -1402,6 +1420,7 @@ def _release_accelerator_cache() -> None:
 
 
 def _new_coherence_lists() -> Dict[str, object]:
+    """Create empty accumulators for word-level coherence outputs."""
     return {
         "word_coherence": [],
         "word_coherence_5": [],
@@ -1411,6 +1430,7 @@ def _new_coherence_lists() -> Dict[str, object]:
 
 
 def _extend_coherence_lists(target: Dict[str, object], source: Dict[str, object]) -> None:
+    """Append one coherence accumulator into another in place."""
     target["word_coherence"].extend(source["word_coherence"])
     target["word_coherence_5"].extend(source["word_coherence_5"])
     target["word_coherence_10"].extend(source["word_coherence_10"])
