@@ -5,9 +5,12 @@
 import os
 import json
 import logging
-
+# import torch, torchvision, torchaudio; print(torch.__version__, torchvision.__version__, torchaudio.__version__)
+# import torchvision; from torchvision.ops import nms; print('nms OK')
 from pyannote.audio import Pipeline
-from .util import separation_util as sutil
+# from .util import separation_util as sutil
+from openwillis.transcribe.util import separation_util as sutil
+
 from pydub import AudioSegment
 import pandas as pd
 

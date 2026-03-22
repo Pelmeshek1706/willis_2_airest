@@ -5,6 +5,7 @@
 import pandas as pd
 import numpy as np
 import logging
+from functools import lru_cache
 
 import nltk
 import string
@@ -19,6 +20,65 @@ ukrainian_hierarchy = [ # add 'ь'
     "зсжшщ",       # фрикативні
     "бвгґдкптфхцч"  # змичні (решта приголосних)
 ]
+
+_PUNCT_TRANSLATOR = str.maketrans("", "", string.punctuation)
+
+
+def _normalize_syllable_lang(lang):
+    """Map incoming language aliases to the supported syllable tokenizers."""
+    normalized = (lang or "en").lower()
+    return "uk" if normalized in {"ua", "uk"} else "en"
+
+
+@lru_cache(maxsize=2)
+def _get_syllable_tokenizer(lang):
+    """Create the syllable tokenizer for the requested language."""
+    if lang == "uk":
+        return nltk.tokenize.SyllableTokenizer(lang="uk", sonority_hierarchy=ukrainian_hierarchy)
+    return nltk.tokenize.SyllableTokenizer()
+
+
+def _syllable_tokens(text):
+    """Normalize text and split it into tokens before syllable counting."""
+    clean_text = text.translate(_PUNCT_TRANSLATOR).lower()
+    if not clean_text.strip():
+        return []
+    stripped = clean_text.strip()
+    # Fast path for the hot word-level loop where inputs are single tokens.
+    if stripped == clean_text and " " not in stripped and "\t" not in stripped and "\n" not in stripped:
+        return [stripped]
+    return [tok for tok in nltk.word_tokenize(clean_text) if tok]
+
+
+def _count_syllables_from_tokens(tokens, syllable_tokenizer):
+    """Count syllables across a token sequence using the provided tokenizer."""
+    return sum(len(syllable_tokenizer.tokenize(token)) for token in tokens)
+
+
+def _pause_series_non_negative(values):
+    """Convert pause values to numeric seconds and clamp negatives to zero."""
+    return pd.to_numeric(values, errors="coerce").clip(lower=0.0)
+
+
+def _bounded_speech_percentage(pause_sum_seconds, duration_minutes):
+    """
+    Convert silence duration and turn/file duration to speech percentage,
+    clamped to [0, 100].
+    """
+    if duration_minutes is None:
+        return np.nan
+    try:
+        duration_minutes = float(duration_minutes)
+    except Exception:
+        return np.nan
+    if not np.isfinite(duration_minutes) or duration_minutes <= 0:
+        return np.nan
+
+    duration_seconds = duration_minutes * 60.0
+    speech_pct = 100.0 * (1.0 - (float(pause_sum_seconds) / duration_seconds))
+    if not np.isfinite(speech_pct):
+        return np.nan
+    return float(np.clip(speech_pct, 0.0, 100.0))
 
 
 def get_num_of_syllables(text, lang = 'en'):
@@ -41,12 +101,24 @@ def get_num_of_syllables(text, lang = 'en'):
     """
 
 
-    syllable_tokenizer = nltk.tokenize.SyllableTokenizer(lang="uk", sonority_hierarchy=ukrainian_hierarchy) if lang in ['ua', 'uk'] else nltk.tokenize.SyllableTokenizer()
-    text = text.translate(str.maketrans('', '', string.punctuation))  # Remove punctuation
-    tokens = nltk.word_tokenize(text.lower())  # Tokenize the text and convert to lowercase
-    syllables = [syllable_tokenizer.tokenize(token) for token in tokens]
-    
-    return sum(len(token) for token in syllables)
+    normalized_lang = _normalize_syllable_lang(lang)
+    syllable_tokenizer = _get_syllable_tokenizer(normalized_lang)
+    text = text if isinstance(text, str) else ("" if text is None else str(text))
+    tokens = _syllable_tokens(text)
+
+    return _count_syllables_from_tokens(tokens, syllable_tokenizer)
+
+
+def get_num_of_syllables_batch(text_list, lang='en'):
+    """Count syllables for each text item in a batch."""
+    normalized_lang = _normalize_syllable_lang(lang)
+    syllable_tokenizer = _get_syllable_tokenizer(normalized_lang)
+    output = []
+    for text in text_list:
+        norm_text = text if isinstance(text, str) else ("" if text is None else str(text))
+        tokens = _syllable_tokens(norm_text)
+        output.append(_count_syllables_from_tokens(tokens, syllable_tokenizer))
+    return output
 
 def calculate_pause_features_for_word(word_df, df_diff, word_list, turn_index, measures, lang):
     """
@@ -77,10 +149,10 @@ def calculate_pause_features_for_word(word_df, df_diff, word_list, turn_index, m
     ------------------------------------------------------------------------------------------------------
     """
     turn_starts = [pindex[0] for pindex in turn_index]
-    word_df[measures["word_pause"]] = df_diff[measures["pause"]].where(~df_diff[measures["old_index"]].isin(turn_starts), np.nan)
+    word_pauses = _pause_series_non_negative(df_diff[measures["pause"]])
+    word_df[measures["word_pause"]] = word_pauses.where(~df_diff[measures["old_index"]].isin(turn_starts), np.nan)
     
-    # word_df[measures["num_syllables"]] = pd.Series(word_list).apply(get_num_of_syllables)
-    word_df[measures["num_syllables"]] = pd.Series(word_list).apply(lambda x: get_num_of_syllables(x, lang=lang))
+    word_df[measures["num_syllables"]] = pd.Series(get_num_of_syllables_batch(word_list, lang=lang))
     return word_df
 
 def calculate_pause_features_for_turn(df_diff, df, text_level, index_list, time_index, measures, language):
@@ -114,27 +186,31 @@ def calculate_pause_features_for_turn(df_diff, df, text_level, index_list, time_
 
     ------------------------------------------------------------------------------------------------------
     """
-
+    turn_syllable_counts = get_num_of_syllables_batch(text_level, lang=language)
     for j, index in enumerate(index_list):
         try:
             rng = range(index[0], index[1] + 1)
             turn_data = df_diff[df_diff[measures["old_index"]].isin(rng)]
 
-            pauses = turn_data[measures["pause"]].values[1:]
+            raw_pauses = pd.to_numeric(turn_data[measures["pause"]], errors="coerce").to_numpy(dtype=float)
+            pauses = np.clip(raw_pauses[1:], a_min=0.0, a_max=None) if len(raw_pauses) > 1 else np.array([], dtype=float)
+            finite_pauses = pauses[np.isfinite(pauses)]
             turn_duration = (float(turn_data.iloc[-1][time_index[1]]) - float(turn_data.iloc[0][time_index[0]])) / 60
 
             df.loc[j, measures[f"turn_minutes"]] = turn_duration
             df.loc[j, measures[f"turn_words"]] = len(turn_data)
 
-            if len(pauses) > 0:
-                df.loc[j, measures["pause_var"]] = np.var(pauses) if len(pauses) > 1 else 0
-                df.loc[j, measures["pause_meandur"]] = np.mean(pauses)
+            if len(finite_pauses) > 0:
+                df.loc[j, measures["pause_var"]] = np.var(finite_pauses) if len(finite_pauses) > 1 else 0
+                df.loc[j, measures["pause_meandur"]] = np.mean(finite_pauses)
 
             if turn_duration > 0:
-                df.loc[j, measures["speech_percentage"]] = 100 * (1 - np.sum(pauses) / (60 * turn_duration))
+                speech_percentage = _bounded_speech_percentage(np.sum(finite_pauses), turn_duration)
+                if np.isfinite(speech_percentage):
+                    df.loc[j, measures["speech_percentage"]] = speech_percentage
 
                 if language in measures["english_langs"] or language in ['uk', 'ua']:
-                    syllable_rate = (get_num_of_syllables(text_level[j], lang=language) / turn_duration)
+                    syllable_rate = (turn_syllable_counts[j] / turn_duration)
                     df.loc[j, measures["syllable_rate"]] = syllable_rate
 
                 df.loc[j, measures["word_rate"]] = len(turn_data) / turn_duration
@@ -177,16 +253,13 @@ def get_pause_feature_turn(turn_df, df_diff, turn_list, turn_index, time_index, 
     ------------------------------------------------------------------------------------------------------
     """
     turn_starts = [uindex[0] for uindex in turn_index]
-    df_diff_turn = df_diff[df_diff[measures["old_index"]].isin(turn_starts)]
+    df_diff_turn = df_diff[df_diff[measures["old_index"]].isin(turn_starts)].reset_index(drop=True)
+    raw_turn_pause = pd.to_numeric(df_diff_turn[measures["pause"]], errors="coerce")
 
-    turn_df[measures["turn_pause"]] = df_diff_turn[measures["pause"]]
-    turn_df[measures["interrupt_flag"]] = False
-    
-    negative_pause = turn_df[measures["turn_pause"]] <= 0
-    turn_df.loc[negative_pause, measures["turn_pause"]] = 0
-    
-    turn_df.loc[negative_pause, measures["interrupt_flag"]] = True
     turn_df = turn_df.reset_index(drop=True)
+    turn_df[measures["turn_pause"]] = raw_turn_pause.clip(lower=0.0)
+    # Keep overlap signal from raw pauses; zero-gap boundaries are not interruptions.
+    turn_df[measures["interrupt_flag"]] = (raw_turn_pause < 0)
 
     turn_df = calculate_pause_features_for_turn(df_diff, turn_df, turn_list, turn_index, time_index, measures, language)
     return turn_df
@@ -235,7 +308,12 @@ def update_summ_df(df_diff, summ_df, full_text, time_index, word_df, turn_df, me
     if speech_minutes > 0:
         summ_df[measures["word_rate"]] = speech_words / speech_minutes
         summ_df[measures["syllable_rate"]] = get_num_of_syllables(full_text, lang=language) / speech_minutes
-        summ_df[measures["speech_percentage"]] = 100 * (speech_minutes / summ_df[measures["file_length"]])
+        file_length_values = pd.to_numeric(summ_df[measures["file_length"]], errors="coerce")
+        if len(file_length_values) > 0 and np.isfinite(file_length_values.iloc[0]) and file_length_values.iloc[0] > 0:
+            speech_pct = 100.0 * (speech_minutes / float(file_length_values.iloc[0]))
+            summ_df[measures["speech_percentage"]] = float(np.clip(speech_pct, 0.0, 100.0))
+        else:
+            summ_df[measures["speech_percentage"]] = np.nan
 
     if len(word_df[measures["word_pause"]]) > 1:
         summ_df[measures["word_pause_mean"]] = word_df[measures["word_pause"]].mean(skipna=True)
@@ -295,6 +373,8 @@ def get_pause_feature(json_conf, df_list, text_list, turn_index, measures, time_
         # Calculate the pause time between; each word and add the results to pause_list
         if measures["pause"] not in df_diff.columns:
             df_diff[measures["pause"]] = df_diff[time_index[0]].astype(float) - df_diff[time_index[1]].astype(float).shift(1)
+        else:
+            df_diff[measures["pause"]] = pd.to_numeric(df_diff[measures["pause"]], errors="coerce")
 
         # word-level analysis
 
