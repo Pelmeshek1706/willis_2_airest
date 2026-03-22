@@ -368,13 +368,27 @@ def _extract_phrase_payload(item, idxs, words_texts, text):
     phrase_ids = [(idxs[word_start], idxs[word_end]) for word_start, word_end in parsed_ranges]
     return phrase_ids, parsed_texts
 
-def create_turns_whisper(item_data, measures):
+def normalize_whisper_turn_mode(whisper_turn_mode):
+    """Normalize and validate the Whisper turn construction mode."""
+    if whisper_turn_mode is None:
+        return "auto"
+
+    turn_mode = str(whisper_turn_mode).strip().lower()
+    if turn_mode not in {"auto", "speaker", "segment"}:
+        raise ValueError(
+            "Invalid whisper_turn_mode. Please use 'auto', 'speaker', or 'segment'"
+        )
+    return turn_mode
+
+def create_turns_whisper(item_data, measures, whisper_turn_mode="auto"):
     """Convert Whisper segments into the turn-level dataframe schema."""
     data = []
+    turn_mode = normalize_whisper_turn_mode(whisper_turn_mode)
     has_speaker = any(("speaker" in s and s["speaker"] is not None) for s in item_data)
+    use_speaker_turns = has_speaker and turn_mode in {"auto", "speaker"}
 
-    if not has_speaker:
-        # Каждый сегмент = отдельный turn
+    if not use_speaker_turns:
+        # Segment-level turns, even when speaker labels are present.
         for item in item_data:
             words = [w for w in item.get("words", []) if "start" in w]
             idxs = [w[measures["old_index"]] for w in words]
@@ -394,7 +408,7 @@ def create_turns_whisper(item_data, measures):
             })
         return pd.DataFrame(data)
 
-    # Диаризация: группировка по speaker
+    # Diarized turns: group consecutive segments by speaker.
     current_speaker = None
     aggregated_text = ""
     aggregated_ids = []
