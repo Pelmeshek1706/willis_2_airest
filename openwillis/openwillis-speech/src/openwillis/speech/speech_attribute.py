@@ -325,6 +325,7 @@ def process_transcript(
         info = filter_vosk(json_conf, measures)
 
     if len(info[0]) > 0 and len(info[1]) > 0:
+        strict_speaker_scope = source == "whisper" and whisper_turn_mode == "segment"
         df_list = cutil.process_language_feature(
             df_list,
             info,
@@ -336,6 +337,8 @@ def process_transcript(
             option,
             measures,
             feature_groups=feature_groups,
+            speaker_filter_label=speaker_label if strict_speaker_scope else None,
+            coherence_speaker_label=speaker_label if strict_speaker_scope else None,
         )
     return df_list
 
