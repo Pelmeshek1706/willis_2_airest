@@ -399,9 +399,24 @@ def speech_characteristics(
         Optional feature group selector. When provided, only these groups are computed.
         Supported groups: "pause", "repetition", "coherence", "sentiment", "first_person".
     whisper_turn_mode: str
-        Whisper turn construction mode:
-        "auto" keeps the current behavior, "speaker" groups consecutive segments
-        by speaker, and "segment" keeps one segment per turn.
+        Whisper turn construction and speaker-scope mode.
+        Supported values:
+        "auto":
+            Default Whisper behavior. If diarization labels are present, consecutive
+            segments are merged into speaker turns. Downstream language/coherence
+            features are then computed over the full dialogue turn sequence rather
+            than a strict single-speaker slice. If diarization labels are absent,
+            this falls back to one-segment-per-turn behavior.
+        "speaker":
+            Force diarized speaker turns by merging consecutive Whisper segments with
+            the same speaker label. Downstream language/coherence features are
+            computed over the full dialogue turn sequence, while `speaker_percentage`
+            still reflects the requested `speaker_label`.
+        "segment":
+            Keep each Whisper segment as its own turn. When `speaker_label` is
+            provided, downstream language/coherence features are computed only for
+            that speaker, so participant/interviewer outputs diverge across the
+            returned word, turn, and summary dataframes.
 
     Returns:
     ...........
