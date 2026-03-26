@@ -18,13 +18,22 @@ import pandas as pd
 from openwillis.speech.util.speech import coherence
 
 coherence.COHERENCE_BACKEND = "gemma"   # or "gemma"
-language = "en"
 print(f"Using coherence backend: {coherence.COHERENCE_BACKEND}")
 import torch; print("torch version - ", torch.__version__)
 INPUT_DIR   = Path('/Users/pelmeshek1706/Desktop/projects/airest_notebooks/woz_end_whisper_test')
+OUTPUT_SOURCE_DIR = Path('/Users/pelmeshek1706/Desktop/projects/airest_notebooks/result_oppenwillis_eng_norm_gemma_test_sentiment-11-2-26')
 OUTPUT_DIR  = Path('/Users/pelmeshek1706/Desktop/projects/airest_notebooks/result_oppenwillis_eng_norm_gemma_test_sentiment-11-2-26') # improved_vader_ua - 11-2-26
 # OUTPUT_DIR  = Path('/Users/pelmeshek1706/Desktop/projects/airest_notebooks/result_oppenwillis_ukr_norm_gemma_test_sentiment-11-2-26') # default vader - 11-2-26
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+def _infer_language(*paths: Path) -> str:
+    hint = " ".join(str(p).lower() for p in paths)
+    if any(token in hint for token in ("ukr", "ukrain", "_ua", "-ua", "/ua/")):
+        return "uk"
+    return "en"
+
+language = _infer_language(INPUT_DIR, OUTPUT_SOURCE_DIR, OUTPUT_DIR)
+print(f"Detected language for run: {language}")
 
 
 
@@ -51,7 +60,7 @@ for json_file in tqdm(files, total=len(files), desc="Processing"):
             option="simple",
             language=language,
             speaker_label="SPEAKER_A",
-            feature_groups=["sentiment", "first_person"],
+            feature_groups=["first_person"],
             min_coherence_turn_length=1
         )
     except RuntimeError as rexc:
@@ -63,6 +72,10 @@ for json_file in tqdm(files, total=len(files), desc="Processing"):
         traceback.print_exc()
         continue
     try:
+        words_path_in = OUTPUT_SOURCE_DIR / f"words_{name}.csv"
+        turns_path_in = OUTPUT_SOURCE_DIR / f"turns_{name}.csv"
+        summ_path_in = OUTPUT_SOURCE_DIR / f"summary_sc_{name}.csv"
+
         words_path_out = OUTPUT_DIR / f"words_{name}.csv"
         turns_path_out = OUTPUT_DIR / f"turns_{name}.csv"
         summ_path_out = OUTPUT_DIR / f"summary_sc_{name}.csv"
