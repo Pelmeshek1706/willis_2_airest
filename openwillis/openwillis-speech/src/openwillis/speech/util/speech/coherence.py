@@ -1259,10 +1259,9 @@ def calculate_turn_coherence(utterances_filtered, turn_df, min_coherence_turn_le
     turn_to_turn_tangeniality_list = []
     for i, row in utterances_filtered.iterrows():
         current_speaker = row[measures['speaker_label']]
-        current_speaker = speaker_label # 
-        if current_speaker != speaker_label:
+        if speaker_label is not None and current_speaker != speaker_label:
             continue
-        elif len(row[measures['words_texts']]) < min_coherence_turn_length:
+        if len(row[measures['words_texts']]) < min_coherence_turn_length:
             sentence_tangeniality1_list.append(np.nan)
             sentence_tangeniality2_list.append(np.nan)
             perplexity_list.append(np.nan)
