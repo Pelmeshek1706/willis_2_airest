@@ -36,13 +36,13 @@ for json_file in tqdm(files, total=len(files), desc="Processing"):
     print(f"Processing file: {name}")
 
     # if str(name) in nums:
-    #     print(f'Skipping {name}')
+    #     print(f'Пропускаю {name}')
     #     continue
     if str(name) != "300":
-        print(f'Skipping {name}')
+        print(f'Пропускаю {name}')
         continue
     try:
-        # 4.1 - Read JSON
+        # 4.1 – Чтение JSON
         with open(json_file, 'r', encoding='utf-8') as f:
             transcript_json = json.load(f)
 
@@ -56,10 +56,10 @@ for json_file in tqdm(files, total=len(files), desc="Processing"):
         )
     except RuntimeError as rexc:
         # skip.append(str(name))
-        print(f'❌ Skipping {json_file} due to RuntimeError:')
+        print(f'❌ Пропускаю {json_file} из-за ошибки RuntimeError:')
     except Exception as exc:
-        # If an error occurs, print the traceback and skip the file
-        print(f'❌ Error while processing {json_file}:')
+        # Если возникла ошибка – выводим трассировку и пропускаем файл
+        print(f'❌ Ошибка при обработке {json_file}:')
         traceback.print_exc()
         continue
     try:
@@ -70,10 +70,10 @@ for json_file in tqdm(files, total=len(files), desc="Processing"):
         words_new.to_csv(words_path_out, index=False)
         turns_new.to_csv(turns_path_out, index=False)
         summary_new.to_csv(summ_path_out, index=False)
-        print(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ✅ Saved: words_{name}.csv, turns_{name}.csv, summary_sc_{name}.csv')
+        print(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ✅ Сохранено: words_{name}.csv, turns_{name}.csv, summary_sc_{name}.csv')
 
     except Exception as exc:
-        print(f'❌ Error while saving CSVs for {name}:')
+        print(f'❌ Ошибка при сохранении CSV для {name}:')
         traceback.print_exc()
 
-print('=== Finished ===')
+print('=== Завершено ===')

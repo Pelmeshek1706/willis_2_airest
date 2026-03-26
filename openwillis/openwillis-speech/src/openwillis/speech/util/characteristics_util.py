@@ -368,27 +368,13 @@ def _extract_phrase_payload(item, idxs, words_texts, text):
     phrase_ids = [(idxs[word_start], idxs[word_end]) for word_start, word_end in parsed_ranges]
     return phrase_ids, parsed_texts
 
-def normalize_whisper_turn_mode(whisper_turn_mode):
-    """Normalize and validate the Whisper turn construction mode."""
-    if whisper_turn_mode is None:
-        return "auto"
-
-    turn_mode = str(whisper_turn_mode).strip().lower()
-    if turn_mode not in {"auto", "speaker", "segment"}:
-        raise ValueError(
-            "Invalid whisper_turn_mode. Please use 'auto', 'speaker', or 'segment'"
-        )
-    return turn_mode
-
-def create_turns_whisper(item_data, measures, whisper_turn_mode="auto"):
+def create_turns_whisper(item_data, measures):
     """Convert Whisper segments into the turn-level dataframe schema."""
     data = []
-    turn_mode = normalize_whisper_turn_mode(whisper_turn_mode)
     has_speaker = any(("speaker" in s and s["speaker"] is not None) for s in item_data)
-    use_speaker_turns = has_speaker and turn_mode in {"auto", "speaker"}
 
-    if not use_speaker_turns:
-        # Segment-level turns, even when speaker labels are present.
+    if not has_speaker:
+        # Каждый сегмент = отдельный turn
         for item in item_data:
             words = [w for w in item.get("words", []) if "start" in w]
             idxs = [w[measures["old_index"]] for w in words]
@@ -408,7 +394,7 @@ def create_turns_whisper(item_data, measures, whisper_turn_mode="auto"):
             })
         return pd.DataFrame(data)
 
-    # Diarized turns: group consecutive segments by speaker.
+    # Диаризация: группировка по speaker
     current_speaker = None
     aggregated_text = ""
     aggregated_ids = []
@@ -710,8 +696,6 @@ def process_language_feature(
     option,
     measures,
     feature_groups=None,
-    speaker_filter_label=None,
-    coherence_speaker_label=None,
 ):
     """
     ------------------------------------------------------------------------------------------------------
@@ -740,12 +724,6 @@ def process_language_feature(
     feature_groups: list[str] | set[str] | None
         Optional feature group selector. When provided, only these groups are computed.
         Supported groups: "pause", "repetition", "coherence", "sentiment", "first_person".
-    speaker_filter_label: str | None
-        Speaker scope for strict filtering of utterances and word-level json payloads.
-        When None, language features are computed over the whole interview.
-    coherence_speaker_label: str | None
-        Speaker scope for phrase coherence. When None, phrase coherence is
-        computed over the full dialogue turn sequence.
     measures: dict
         A dictionary containing the names of the columns in the output dataframes.
 
@@ -773,22 +751,11 @@ def process_language_feature(
     want_first_person = "first_person" in feature_groups
 
     # filter speaker in json_conf and utterances
-    utterances_speaker, json_conf_speaker = filter_speaker(
-        utterances,
-        json_conf,
-        speaker_filter_label,
-        measures,
-    )
+    utterances_speaker, json_conf_speaker = filter_speaker(utterances, json_conf, None, measures)
     # create text list and turn indices
     text_list, turn_indices = create_text_list(utterances_speaker, speaker_label, min_turn_length, measures)
     # filter utterances with minimum length
-    _, utterances_speaker_filtered = filter_length(
-        utterances,
-        utterances_speaker,
-        speaker_filter_label,
-        min_turn_length,
-        measures,
-    )
+    utterances_filtered, utterances_speaker_filtered = filter_length(utterances, utterances_speaker, speaker_label, min_turn_length, measures)
 
     if want_pause:
         df_list = get_pause_feature(json_conf_speaker, df_list, text_list, turn_indices, measures, time_index, language)
@@ -797,14 +764,7 @@ def process_language_feature(
 
     if want_coherence:
         df_list = get_word_coherence(df_list, utterances_speaker, min_coherence_turn_length, language, measures)
-        df_list = get_phrase_coherence(
-            df_list,
-            utterances_speaker_filtered,
-            min_coherence_turn_length,
-            coherence_speaker_label,
-            language,
-            measures,
-        )
+        df_list = get_phrase_coherence(df_list, utterances_filtered, min_coherence_turn_length, speaker_label, language, measures)
 
     if language in measures["english_langs"] or language in ['uk', 'ua']:
         if want_sentiment:

@@ -1,39 +1,39 @@
 # Triplet Sentiment Inference
 
-This script compares 3 sentiment analyzers on OpenWillis/Whisper JSON:
+Скрипт сравнивает 3 анализатора сентимента на OpenWillis/Whisper JSON:
 
-- `vader` (classic English VADER)
-- `vader-ua` (the standard external `vader-ua`)
-- `vader-ua-improved` (the improved class from this project)
+- `vader` (классический английский VADER)
+- `vader-ua` (обычный внешний `vader-ua`)
+- `vader-ua-improved` (улучшенный класс из проекта)
 
-## Files
+## Файлы
 
-- Script: `/Users/pelmeshek1706/Desktop/projects/final_airest_voice/airest/sentiment_triplet_inference/run_triplet_sentiment_inference.py`
-- Default outputs: `/Users/pelmeshek1706/Desktop/projects/final_airest_voice/airest/sentiment_triplet_inference/outputs`
+- Скрипт: `/Users/pelmeshek1706/Desktop/projects/final_airest_voice/airest/sentiment_triplet_inference/run_triplet_sentiment_inference.py`
+- Выходы по умолчанию: `/Users/pelmeshek1706/Desktop/projects/final_airest_voice/airest/sentiment_triplet_inference/outputs`
 
-## Run (single file)
+## Запуск (один файл)
 
 ```bash
 airest/.venv/bin/python /Users/pelmeshek1706/Desktop/projects/final_airest_voice/airest/sentiment_triplet_inference/run_triplet_sentiment_inference.py \
   --inputs /Users/pelmeshek1706/Desktop/projects/airest_notebooks/woz_end_whisper_test_ukr/300.json
 ```
 
-## Run (entire directory)
+## Запуск (вся директория)
 
 ```bash
 airest/.venv/bin/python /Users/pelmeshek1706/Desktop/projects/final_airest_voice/airest/sentiment_triplet_inference/run_triplet_sentiment_inference.py \
   --inputs /Users/pelmeshek1706/Desktop/projects/airest_notebooks/woz_end_whisper_test_ukr
 ```
 
-## Output filenames
+## Имена выходных файлов
 
-For each input `<n>.json`, the script creates 3 CSV files:
+Для каждого входного `<n>.json` создаются 3 CSV:
 
 - `sentiment_<n>_vader.csv`
 - `sentiment_<n>_vader-ua.csv`
 - `sentiment_<n>_vader-ua-improved.csv`
 
-Each CSV contains:
+Каждый CSV содержит:
 
-- rows with `row_type=turn` (per segment)
-- one row with `row_type=summary` (for the full text)
+- строки `row_type=turn` (по сегментам)
+- строку `row_type=summary` (по полному тексту)

@@ -1971,9 +1971,9 @@ transcript_json_ua_3 = {'text': " Мій еней був парабок мото
 # -*- coding: utf-8 -*-
 
 # """
-# Batch processor for Whisper transcripts.
-# Reads JSON files from the woz_eng_whisper directory,
-# runs ows.speech_characteristics, and saves the results as CSV files.
+# Пакетный обработчик Whisper‑transcripts.
+# Считывает JSON‑файлы из каталога woz_eng_whisper,
+# вызывает функцию ows.speech_characteristics и сохраняет результаты в CSV‑формате.
 # """
 
 import os
@@ -1983,15 +1983,15 @@ from pathlib import Path
 from tqdm import tqdm
 from datetime import datetime
 # ------------------------------------------------------------------
-# 1️⃣ Prepare the environment (if not done yet)
+# 1️⃣ Подготовка окружения (если ещё не сделано)
 # ------------------------------------------------------------------
-# If you use SSL certificates, you can set the environment variable:
+# Если вы используете SSL‑сертификаты, можно установить переменную:
 # os.environ['SSL_CERT_FILE'] = certifi.where()
 print("kernel is ...")
 import sys
 print(sys.executable)
 # ------------------------------------------------------------------
-# 2️⃣ Import the required modules
+# 2️⃣ Импортируем нужные модули
 # ------------------------------------------------------------------
 import openwillis.speech as ows
 import torch
@@ -2002,7 +2002,7 @@ from openwillis.speech.util.speech import coherence
 coherence.COHERENCE_BACKEND = "gemma"   # or "gemma"
 print(f"Using coherence backend: {coherence.COHERENCE_BACKEND}")
 # ------------------------------------------------------------------
-# 3️⃣ Paths to the input and output directories
+# 3️⃣ Путь к входным и выходным каталогам
 # ------------------------------------------------------------------
 INPUT_DIR   = Path('/Users/pelmeshek1706/Desktop/projects/airest_notebooks/woz_end_whisper_test_ukr')
 OUTPUT_DIR  = Path('/Users/pelmeshek1706/Desktop/projects/airest_notebooks/rerun_result_oppenwillis_ukr_norm_gemma_19-2-26')
@@ -2011,29 +2011,29 @@ nums = ['418', '424', '430', '381', '395', '626', '632', '633', '627', '380', '3
 oom = ['661']# not enought memmory '380', '698'
 
 # skip = ['380', '640', '362', '323', '374', '636', '661', '417', '315'] # '380'
-# Create the output directory if it does not exist yet
+# Создаём выходной каталог, если он ещё не существует
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # ------------------------------------------------------------------
-# 4️⃣ Process each JSON file
+# 4️⃣ Обрабатываем каждый JSON‑файл
 # ------------------------------------------------------------------
 for json_file in tqdm(INPUT_DIR.glob('*.json')):
-    # Filename without the extension (for example, '300')
+    # Имя файла без расширения (например, '300')
     name = json_file.stem
 
-    print(f'Processing {json_file} -> {name}')
+    print(f'Обрабатываю {json_file} → {name}')
     if str(name) in nums and str(name) not in oom:
-        print(f'Skipping {name}')
+        print(f'Пропускаю {name}')
         continue
     # if str(name) in skip:
     #     print(f'Skipping {name}')
     #     continue
      # ------------------------------------------------------------------
     try:
-        # 4.1 - Read JSON
+        # 4.1 – Чтение JSON
         with open(json_file, 'r', encoding='utf-8') as f:
             transcript_json = json.load(f)
 
-        # 4.2 - Call the OpenWillis function
+        # 4.2 – Вызов функции OpenWillis
         words, turns, summary_sc = ows.speech_characteristics(
             json_conf=transcript_json,
             option='coherence',
@@ -2044,15 +2044,15 @@ for json_file in tqdm(INPUT_DIR.glob('*.json')):
 
     except RuntimeError as rexc:
         # skip.append(str(name))
-        print(f'❌ Skipping {json_file} due to RuntimeError:')
+        print(f'❌ Пропускаю {json_file} из-за ошибки RuntimeError:')
     except Exception as exc:
-        # If an error occurs, print the traceback and skip the file
-        print(f'❌ Error while processing {json_file}:')
+        # Если возникла ошибка – выводим трассировку и пропускаем файл
+        print(f'❌ Ошибка при обработке {json_file}:')
         traceback.print_exc()
         continue
     
     # ------------------------------------------------------------------
-    # 5️⃣ Save the results as CSV files
+    # 5️⃣ Сохраняем результаты в CSV‑файлы
     # ------------------------------------------------------------------
     try:
         words.to_csv(OUTPUT_DIR / f'words_{name}.csv', index=False)
