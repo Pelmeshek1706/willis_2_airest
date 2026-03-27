@@ -4,7 +4,7 @@ print("Stay here....")
 print(openwillis.speech.__file__)
 
 import openwillis.speech as ows
-import openwillis.transcribe as owt
+# import openwillis.transcribe as owt
 print("continue...")
 
 import os
@@ -17,12 +17,12 @@ import pandas as pd
 
 from openwillis.speech.util.speech import coherence
 
-coherence.COHERENCE_BACKEND = "bert"   # or "gemma"
+coherence.COHERENCE_BACKEND = "gemma"   # or "gemma"
 print(f"Using coherence backend: {coherence.COHERENCE_BACKEND}")
 import torch; print("torch version - ", torch.__version__)
 INPUT_DIR   = Path('/Users/pelmeshek1706/Desktop/projects/airest_notebooks/woz_end_whisper_test')
-OUTPUT_SOURCE_DIR = Path('/Users/pelmeshek1706/Desktop/projects/airest_notebooks/result_oppenwillis_eng_norm')
-OUTPUT_DIR  = Path('/Users/pelmeshek1706/Desktop/projects/airest_notebooks/result_oppenwillis_eng_norm_bert_updated_sentiment_FIXED_-5-2-26')
+OUTPUT_SOURCE_DIR = Path('/Users/pelmeshek1706/Desktop/projects/airest_notebooks/result_oppenwillis_eng_norm_gemma_updated_sentiment_FIXED_21-2-26')
+OUTPUT_DIR  = Path('/Users/pelmeshek1706/Desktop/projects/airest_notebooks/result_oppenwillis_eng_norm_gemma_updated_sentiment_n_fp_FIXED_22-2-26')
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -44,7 +44,7 @@ for json_file in tqdm(INPUT_DIR.glob('*.json')):
             option="simple",
             language="en",
             speaker_label="SPEAKER_A",
-            feature_groups=["sentiment", "first_person"],
+            feature_groups=["first_person"],
         )
     except RuntimeError as rexc:
         # skip.append(str(name))
@@ -72,24 +72,45 @@ for json_file in tqdm(INPUT_DIR.glob('*.json')):
         turns_old = pd.read_csv(turns_path_in)
         summ_old = pd.read_csv(summ_path_in)
 
-        words_cols = ["first_person"]
-        turns_cols = [
-            "sentiment_pos","sentiment_neg","sentiment_neu","sentiment_overall",
-            "sentiment_vader_pos","sentiment_vader_neg","sentiment_vader_neu","sentiment_vader_overall",
-            "mattr_5","mattr_10","mattr_25","mattr_50","mattr_100",
-            "first_person_percentage","first_person_sentiment_positive","first_person_sentiment_negative"
-        ]
-        summ_cols = [
-            "sentiment_pos","sentiment_neg","sentiment_neu","sentiment_overall",
-            "sentiment_vader_pos","sentiment_vader_neg","sentiment_vader_neu","sentiment_vader_overall",
-            "mattr_5","mattr_10","mattr_25","mattr_50","mattr_100",
-            "first_person_percentage","first_person_sentiment_positive",
-            "first_person_sentiment_negative","first_person_sentiment_overall"
-        ]
+        def _existing(cols, old_df, new_df):
+            return [c for c in cols if c in old_df.columns and c in new_df.columns]
 
-        words_old[words_cols] = words_new[words_cols].values
-        turns_old[turns_cols] = turns_new[turns_cols].values
-        summ_old[summ_cols] = summary_new[summ_cols].values
+        words_cols = _existing(
+            ["first_person"],
+            words_old,
+            words_new,
+        )
+        turns_cols = _existing(
+            [
+                "first_person_percentage",
+                "first_person_sentiment_positive",
+                "first_person_sentiment_negative",
+                "first_person_sentiment_positive_vader",
+                "first_person_sentiment_negative_vader",
+            ],
+            turns_old,
+            turns_new,
+        )
+        summ_cols = _existing(
+            [
+                "first_person_percentage",
+                "first_person_sentiment_positive",
+                "first_person_sentiment_negative",
+                "first_person_sentiment_overall",
+                "first_person_sentiment_positive_vader",
+                "first_person_sentiment_negative_vader",
+                "first_person_sentiment_overall_vader",
+            ],
+            summ_old,
+            summary_new,
+        )
+
+        if words_cols:
+            words_old[words_cols] = words_new[words_cols].values
+        if turns_cols:
+            turns_old[turns_cols] = turns_new[turns_cols].values
+        if summ_cols:
+            summ_old[summ_cols] = summary_new[summ_cols].values
 
         words_old.to_csv(words_path_out, index=False)
         turns_old.to_csv(turns_path_out, index=False)

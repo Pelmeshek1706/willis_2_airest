@@ -4,3 +4,6 @@ __pycache__/
 **/.DS_Store/
 .venv/
 .DS_Store
+/tmp/
+/output/
+/sentiment_triplet_inference/outputs
