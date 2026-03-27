@@ -27,19 +27,19 @@ To quantify translation quality and potential distortions introduced by translat
 
 **1) Reference-free MT quality estimation (QE).**  
 We compute **COMET-QE** using **`Unbabel/wmt22-cometkiwi-da`** (reference-free learned metric; regression model on top of InfoXLM; trained on WMT direct assessments + MLQE-PE). :contentReference[oaicite:3]{index=3}  
-**Result (DCWOZ EN→UA):** COMET-QE system score = **0.7393**.
+**Result (DCWOZ EN→UA):** COMET-QE system score = **0.8337**.
 
 **2) Length preservation diagnostics.**  
-We compare token-length distributions between the English source and Ukrainian translations to detect pathological outputs (e.g., repetition loops).  
-- EN token length mean±std: **13.694 ± 18.559**  
-- UA token length mean±std: **11.318 ± 15.333**  
-- Length ratio (UA/EN) mean±std: **0.932 ± 3.325**
+We compare token-length distributions between the English source and Ukrainian translations to detect pathological outputs (e.g., repetition loops). Reported token-length means are trimmed at the 99.5th percentile to reduce outlier impact.  
+- EN token length mean±std: **9.444 ± 9.071**  
+- UA token length mean±std: **7.988 ± 7.728**  
+- Length ratio (UA/EN) mean±std: **0.873 ± 0.221**
 
 **3) Lexical feature preservation (utterances with ≥5 tokens).**  
-- TTR EN mean±std: **0.8745 ± 0.1313**  
-- TTR UA mean±std: **0.9061 ± 0.1234**  
-- MATTR EN mean±std: **0.8812 ± 0.1202**  
-- MATTR UA mean±std: **0.9101 ± 0.1131**
+- TTR EN mean±std: **0.9294 ± 0.0981**  
+- TTR UA mean±std: **0.9596 ± 0.0745**  
+- MATTR EN mean±std: **0.9302 ± 0.0960**  
+- MATTR UA mean±std: **0.9600 ± 0.0733**
 
 **4) Round-trip consistency check (EN→UA→EN) with chrF++.**  
 As an additional sanity check, we back-translate Ukrainian text to English and compute **chrF++** between the original English and back-translated English (chrF++ corresponds to chrF with word n-gram order = 2 in sacreBLEU). :contentReference[oaicite:4]{index=4}  
