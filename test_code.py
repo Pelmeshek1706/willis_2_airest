@@ -2004,11 +2004,12 @@ print(f"Using coherence backend: {coherence.COHERENCE_BACKEND}")
 # ------------------------------------------------------------------
 # 3️⃣ Paths to the input and output directories
 # ------------------------------------------------------------------
-INPUT_DIR   = Path('/Users/pelmeshek1706/Desktop/projects/airest_notebooks/woz_ukr_whisper_traslated_gemma')
-OUTPUT_DIR  = Path('/Users/pelmeshek1706/Desktop/projects/airest_notebooks/result_oppenwillis_ukr_gemma_new_json_split-1-3-26')
+INPUT_DIR   = Path('/Users/pelmeshek1706/Desktop/projects/final_airest_voice/airest/tmp/role_labeled_whisper_like_stub_batch_eng_26-03-2026')
+OUTPUT_DIR  = Path('/Users/pelmeshek1706/Desktop/projects/final_airest_voice/airest/tmp/result_phonoma_gemma_eng_26-03-2026')
 
 # nums = ['380', '396', '379', '441', '482', '695', '656', '683', '457', '314', '713', '338', '601', '416', '400']
-# oom = []# not enought memmory '380', '698'
+nums = []
+oom = []# not enought memmory '380', '698'
 
 # skip = ['380', '640', '362', '323', '374', '636', '661', '417', '315'] # '380'
 # Create the output directory if it does not exist yet
@@ -2035,12 +2036,14 @@ for json_file in tqdm(INPUT_DIR.glob('*.json')):
 
         # 4.2 - Call the OpenWillis function
         words, turns, summary_sc = ows.speech_characteristics(
-            json_conf=transcript_json,
-            option='coherence',
-            language='ua',
-            speaker_label='SPEAKER_A',
-            min_coherence_turn_length=2
-        )
+                                json_conf=transcript_json,
+                                option="coherence",
+                                language="en",
+                                speaker_label="participant",
+                                min_coherence_turn_length=2,
+                                whisper_turn_mode="segment",
+                            )
+
 
     except RuntimeError as rexc:
         # skip.append(str(name))
