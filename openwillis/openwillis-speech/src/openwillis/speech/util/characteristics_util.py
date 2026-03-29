@@ -368,33 +368,55 @@ def _extract_phrase_payload(item, idxs, words_texts, text):
     phrase_ids = [(idxs[word_start], idxs[word_end]) for word_start, word_end in parsed_ranges]
     return phrase_ids, parsed_texts
 
-def create_turns_whisper(item_data, measures):
-    """Convert Whisper segments into the turn-level dataframe schema."""
+def _build_whisper_turn_row(item, measures):
+    """Convert a single Whisper segment into one turn row."""
+    words = [w for w in item.get("words", []) if "start" in w]
+    idxs = [w[measures["old_index"]] for w in words]
+    if not idxs:
+        return None
+
+    text = (item.get("text") or "").strip()
+    words_texts = [w.get("word", "") for w in words]
+    phrase_ids, phrase_texts = _extract_phrase_payload(item, idxs, words_texts, text)
+    return {
+        measures["utterance_ids"]: (idxs[0], idxs[-1]),
+        measures["utterance_text"]: text,
+        measures["phrases_ids"]: phrase_ids,
+        measures["phrases_texts"]: phrase_texts,
+        measures["words_ids"]: idxs,
+        measures["words_texts"]: words_texts,
+        measures["speaker_label"]: item.get("speaker"),
+    }
+
+
+def create_turns_whisper(item_data, measures, whisper_turn_mode="speaker"):
+    """
+    Convert Whisper segments into the turn-level dataframe schema.
+
+    Parameters
+    ----------
+    item_data:
+        Whisper segments payload.
+    measures:
+        Column-name mapping from `text.json`.
+    whisper_turn_mode:
+        `"speaker"` groups adjacent segments spoken by the same speaker into one
+        turn. `"segment"` treats each Whisper segment as an independent turn.
+    """
+    turn_mode = (whisper_turn_mode or "speaker").strip().lower()
+    if turn_mode not in {"speaker", "segment"}:
+        raise ValueError("Invalid whisper_turn_mode. Use 'speaker' or 'segment'.")
+
     data = []
     has_speaker = any(("speaker" in s and s["speaker"] is not None) for s in item_data)
 
-    if not has_speaker:
-        # Каждый сегмент = отдельный turn
+    if turn_mode == "segment" or not has_speaker:
         for item in item_data:
-            words = [w for w in item.get("words", []) if "start" in w]
-            idxs = [w[measures["old_index"]] for w in words]
-            if not idxs:
-                continue
-            text = (item.get("text") or "").strip()
-            words_texts = [w.get("word", "") for w in words]
-            phrase_ids, phrase_texts = _extract_phrase_payload(item, idxs, words_texts, text)
-            data.append({
-                measures['utterance_ids']: (idxs[0], idxs[-1]),
-                measures['utterance_text']: text,
-                measures['phrases_ids']: phrase_ids,
-                measures['phrases_texts']: phrase_texts,
-                measures['words_ids']: idxs,
-                measures['words_texts']: words_texts,
-                measures['speaker_label']: item.get('speaker')
-            })
+            row = _build_whisper_turn_row(item, measures)
+            if row is not None:
+                data.append(row)
         return pd.DataFrame(data)
 
-    # Диаризация: группировка по speaker
     current_speaker = None
     aggregated_text = ""
     aggregated_ids = []
@@ -402,50 +424,55 @@ def create_turns_whisper(item_data, measures):
     phrase_ids, phrase_texts = [], []
 
     for item in item_data:
-        speaker = item.get("speaker")
-        words = [w for w in item.get("words", []) if "start" in w]
-        idxs = [w[measures["old_index"]] for w in words]
-        text = (item.get("text") or "").strip()
-        words_texts_item = [w.get("word", "") for w in words]
-        phrase_ids_item, phrase_texts_item = _extract_phrase_payload(item, idxs, words_texts_item, text)
+        row = _build_whisper_turn_row(item, measures)
+        if row is None:
+            continue
+
+        speaker = row[measures["speaker_label"]]
+        utterance_text = row[measures["utterance_text"]]
+        row_word_ids = row[measures["words_ids"]]
+        row_word_texts = row[measures["words_texts"]]
+        row_phrase_ids = row[measures["phrases_ids"]]
+        row_phrase_texts = row[measures["phrases_texts"]]
 
         if speaker == current_speaker:
-            if text:
-                aggregated_text = f"{aggregated_text} {text}".strip() if aggregated_text else text
-            aggregated_ids.extend(idxs)
-            word_ids.extend(idxs)
-            word_texts.extend(words_texts_item)
-            phrase_ids.extend(phrase_ids_item)
-            phrase_texts.extend(phrase_texts_item)
-        else:
-            if aggregated_ids:
-                data.append({
-                    measures['utterance_ids']: (aggregated_ids[0], aggregated_ids[-1]),
-                    measures['utterance_text']: aggregated_text.strip(),
-                    measures['phrases_ids']: phrase_ids,
-                    measures['phrases_texts']: phrase_texts,
-                    measures['words_ids']: word_ids,
-                    measures['words_texts']: word_texts,
-                    measures['speaker_label']: current_speaker
-                })
+            if utterance_text:
+                aggregated_text = f"{aggregated_text} {utterance_text}".strip() if aggregated_text else utterance_text
+            aggregated_ids.extend(row_word_ids)
+            word_ids.extend(row_word_ids)
+            word_texts.extend(row_word_texts)
+            phrase_ids.extend(row_phrase_ids)
+            phrase_texts.extend(row_phrase_texts)
+            continue
 
-            current_speaker = speaker
-            aggregated_text = text
-            aggregated_ids = idxs.copy()
-            word_ids = idxs.copy()
-            word_texts = words_texts_item.copy()
-            phrase_ids = phrase_ids_item.copy()
-            phrase_texts = phrase_texts_item.copy()
+        if aggregated_ids:
+            data.append({
+                measures["utterance_ids"]: (aggregated_ids[0], aggregated_ids[-1]),
+                measures["utterance_text"]: aggregated_text.strip(),
+                measures["phrases_ids"]: phrase_ids,
+                measures["phrases_texts"]: phrase_texts,
+                measures["words_ids"]: word_ids,
+                measures["words_texts"]: word_texts,
+                measures["speaker_label"]: current_speaker,
+            })
+
+        current_speaker = speaker
+        aggregated_text = utterance_text
+        aggregated_ids = row_word_ids.copy()
+        word_ids = row_word_ids.copy()
+        word_texts = row_word_texts.copy()
+        phrase_ids = row_phrase_ids.copy()
+        phrase_texts = row_phrase_texts.copy()
 
     if aggregated_ids:
         data.append({
-            measures['utterance_ids']: (aggregated_ids[0], aggregated_ids[-1]),
-            measures['utterance_text']: aggregated_text.strip(),
-            measures['phrases_ids']: phrase_ids,
-            measures['phrases_texts']: phrase_texts,
-            measures['words_ids']: word_ids,
-            measures['words_texts']: word_texts,
-            measures['speaker_label']: current_speaker
+            measures["utterance_ids"]: (aggregated_ids[0], aggregated_ids[-1]),
+            measures["utterance_text"]: aggregated_text.strip(),
+            measures["phrases_ids"]: phrase_ids,
+            measures["phrases_texts"]: phrase_texts,
+            measures["words_ids"]: word_ids,
+            measures["words_texts"]: word_texts,
+            measures["speaker_label"]: current_speaker,
         })
 
     return pd.DataFrame(data)

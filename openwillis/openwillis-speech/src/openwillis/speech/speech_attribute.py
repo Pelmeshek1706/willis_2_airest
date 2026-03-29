@@ -118,7 +118,7 @@ def filter_transcribe(json_conf, measures):
 
     return filter_json, utterances
 
-def filter_whisper(json_conf, measures):
+def filter_whisper(json_conf, measures, whisper_turn_mode="speaker"):
     """
     ------------------------------------------------------------------------------------------------------
 
@@ -132,10 +132,10 @@ def filter_whisper(json_conf, measures):
         whisper transcribe json response.
     measures: dict
         A dictionary containing the names of the columns in the output dataframes.
-    speaker_label: str
-        Speaker label
-    min_turn_length: int
-        minimum words required in each turn
+    whisper_turn_mode: str
+        Whisper turn construction strategy. `"speaker"` groups consecutive
+        same-speaker segments into one turn. `"segment"` keeps every segment as
+        a separate turn.
 
     Returns:
     ...........
@@ -154,7 +154,7 @@ def filter_whisper(json_conf, measures):
     item_data = json_conf["segments"]
 
     item_data = cutil.create_index_column(item_data, measures)
-    utterances = cutil.create_turns_whisper(item_data, measures)
+    utterances = cutil.create_turns_whisper(item_data, measures, whisper_turn_mode=whisper_turn_mode)
     
     filter_json = cutil.filter_json_transcribe(item_data, measures)
 
@@ -266,6 +266,7 @@ def process_transcript(
     language,
     option,
     feature_groups=None,
+    whisper_turn_mode="speaker",
 ):
     """
     ------------------------------------------------------------------------------------------------------
@@ -296,6 +297,8 @@ def process_transcript(
     feature_groups: list[str] | set[str] | None
         Optional feature group selector. When provided, only these groups are computed.
         Supported groups: "pause", "repetition", "coherence", "sentiment", "first_person".
+    whisper_turn_mode: str
+        Whisper turn construction strategy. Ignored for non-Whisper payloads.
     
     Returns:
     ...........
@@ -307,7 +310,7 @@ def process_transcript(
     common_summary_feature(df_list[2], json_conf, source, speaker_label)
 
     if source == 'whisper':
-        info = filter_whisper(json_conf, measures)
+        info = filter_whisper(json_conf, measures, whisper_turn_mode=whisper_turn_mode)
 
     elif source == 'aws':
         info = filter_transcribe(json_conf, measures)
@@ -361,6 +364,7 @@ def speech_characteristics(
     min_coherence_turn_length=5,
     option='coherence',
     feature_groups=None,
+    whisper_turn_mode="speaker",
 ):
     """
     ------------------------------------------------------------------------------------------------------
@@ -385,6 +389,10 @@ def speech_characteristics(
     feature_groups: list[str] | set[str] | None
         Optional feature group selector. When provided, only these groups are computed.
         Supported groups: "pause", "repetition", "coherence", "sentiment", "first_person".
+    whisper_turn_mode: str
+        Whisper turn construction strategy. `"speaker"` preserves legacy
+        grouping by contiguous speaker turns, while `"segment"` keeps Whisper
+        segments as individual turns.
 
     Returns:
     ...........
@@ -428,6 +436,7 @@ def speech_characteristics(
                     language,
                     option,
                     feature_groups=feature_groups,
+                    whisper_turn_mode=whisper_turn_mode,
                 )
 
             elif is_amazon_transcribe(json_conf):
@@ -442,6 +451,7 @@ def speech_characteristics(
                     language,
                     option,
                     feature_groups=feature_groups,
+                    whisper_turn_mode=whisper_turn_mode,
                 )
 
             else:
@@ -456,6 +466,7 @@ def speech_characteristics(
                     language,
                     option,
                     feature_groups=feature_groups,
+                    whisper_turn_mode=whisper_turn_mode,
                 )
 
     except Exception as e:
