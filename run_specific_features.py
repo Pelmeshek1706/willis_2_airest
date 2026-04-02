@@ -15,6 +15,7 @@ from tqdm import tqdm
 from datetime import datetime
 import pandas as pd
 
+
 from openwillis.speech.util.speech import coherence
 
 coherence.COHERENCE_BACKEND = "gemma"   # or "gemma"

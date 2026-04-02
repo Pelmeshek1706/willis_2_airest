@@ -325,7 +325,6 @@ def process_transcript(
         info = filter_vosk(json_conf, measures)
 
     if len(info[0]) > 0 and len(info[1]) > 0:
-        strict_speaker_scope = source == "whisper" and whisper_turn_mode == "segment"
         df_list = cutil.process_language_feature(
             df_list,
             info,
@@ -337,8 +336,8 @@ def process_transcript(
             option,
             measures,
             feature_groups=feature_groups,
-            speaker_filter_label=speaker_label if strict_speaker_scope else None,
-            coherence_speaker_label=speaker_label if strict_speaker_scope else None,
+            speaker_filter_label=speaker_label,
+            coherence_speaker_label=speaker_label,
         )
     return df_list
 
@@ -399,24 +398,23 @@ def speech_characteristics(
         Optional feature group selector. When provided, only these groups are computed.
         Supported groups: "pause", "repetition", "coherence", "sentiment", "first_person".
     whisper_turn_mode: str
-        Whisper turn construction and speaker-scope mode.
+        Whisper turn construction mode.
         Supported values:
         "auto":
             Default Whisper behavior. If diarization labels are present, consecutive
             segments are merged into speaker turns. Downstream language/coherence
-            features are then computed over the full dialogue turn sequence rather
-            than a strict single-speaker slice. If diarization labels are absent,
-            this falls back to one-segment-per-turn behavior.
+            features continue to respect `speaker_label` when it is provided. If
+            diarization labels are absent, this falls back to one-segment-per-turn
+            behavior.
         "speaker":
             Force diarized speaker turns by merging consecutive Whisper segments with
-            the same speaker label. Downstream language/coherence features are
-            computed over the full dialogue turn sequence, while `speaker_percentage`
-            still reflects the requested `speaker_label`.
+            the same speaker label. Downstream language/coherence features continue
+            to respect `speaker_label`, while `speaker_percentage` still reflects
+            the requested `speaker_label`.
         "segment":
-            Keep each Whisper segment as its own turn. When `speaker_label` is
-            provided, downstream language/coherence features are computed only for
-            that speaker, so participant/interviewer outputs diverge across the
-            returned word, turn, and summary dataframes.
+            Keep each Whisper segment as its own turn. Downstream language/coherence
+            features continue to respect `speaker_label` when it is provided, so
+            segment and speaker modes differ only in turn construction.
 
     Returns:
     ...........
