@@ -2004,8 +2004,8 @@ print(f"Using coherence backend: {coherence.COHERENCE_BACKEND}")
 # ------------------------------------------------------------------
 # 3️⃣ Paths to the input and output directories
 # ------------------------------------------------------------------
-INPUT_DIR   = Path('/Users/pelmeshek1706/Desktop/projects/final_airest_voice/airest/tmp/role_labeled_whisper_like_stub_batch_eng_26-03-2026')
-OUTPUT_DIR  = Path('/Users/pelmeshek1706/Desktop/projects/final_airest_voice/airest/tmp/result_phonoma_gemma_eng_26-03-2026')
+INPUT_DIR   = Path('/Users/pelmeshek1706/Desktop/projects/final_airest_voice/airest/tmp/role_labeled_whisper_like_stub_batch_ukr_26-03-2026')
+OUTPUT_DIR  = Path('/Users/pelmeshek1706/Desktop/projects/final_airest_voice/airest/tmp/result_phonoma_gemma_ukr_30-03-2026')
 
 # nums = ['380', '396', '379', '441', '482', '695', '656', '683', '457', '314', '713', '338', '601', '416', '400']
 nums = []
@@ -2038,10 +2038,10 @@ for json_file in tqdm(INPUT_DIR.glob('*.json')):
         words, turns, summary_sc = ows.speech_characteristics(
                                 json_conf=transcript_json,
                                 option="coherence",
-                                language="en",
+                                language="ua",
                                 speaker_label="participant",
                                 min_coherence_turn_length=2,
-                                whisper_turn_mode="segment",
+                                whisper_turn_mode="speaker",
                             )
 
 
