@@ -57,7 +57,7 @@ def create_empty_dataframes(measures):
                                     measures["first_person_percentage"], measures["first_person_sentiment_positive"], measures["first_person_sentiment_negative"],
                                     measures["word_repeat_percentage"], measures["phrase_repeat_percentage"],
                                     measures["sentence_tangeniality1"], measures["sentence_tangeniality2"],
-                                    measures["turn_to_turn_tangeniality"], measures["perplexity"],
+                                    measures["turn_to_turn_tangeniality"], measures["turn_to_previous_speaker_turn_similarity"], measures["perplexity"],
                                     measures["perplexity_5"], measures["perplexity_11"], measures["perplexity_15"],
                                     measures["interrupt_flag"]])
 
@@ -87,7 +87,9 @@ def create_empty_dataframes(measures):
                 measures["sentence_tangeniality1_mean"], measures["sentence_tangeniality1_var"],
                 measures["sentence_tangeniality2_mean"], measures["sentence_tangeniality2_var"],
                 measures["turn_to_turn_tangeniality_mean"], measures["turn_to_turn_tangeniality_var"],
-                measures["turn_to_turn_tangeniality_slope"], measures["perplexity_mean"], measures["perplexity_var"],
+                measures["turn_to_turn_tangeniality_slope"], measures["turn_to_previous_speaker_turn_similarity_mean"],
+                measures["turn_to_previous_speaker_turn_similarity_var"], measures["turn_to_previous_speaker_turn_similarity_slope"],
+                measures["perplexity_mean"], measures["perplexity_var"],
                 measures["perplexity_5_mean"], measures["perplexity_5_var"], measures["perplexity_11_mean"],
                 measures["perplexity_11_var"], measures["perplexity_15_mean"], measures["perplexity_15_var"],
                 measures["num_interrupts"]])
@@ -782,7 +784,7 @@ def process_language_feature(
     # create text list and turn indices
     text_list, turn_indices = create_text_list(utterances_speaker, speaker_label, min_turn_length, measures)
     # filter utterances with minimum length
-    _, utterances_speaker_filtered = filter_length(
+    utterances_dialogue_filtered, utterances_speaker_filtered = filter_length(
         utterances,
         utterances_speaker,
         speaker_filter_label,
@@ -804,6 +806,7 @@ def process_language_feature(
             coherence_speaker_label,
             language,
             measures,
+            dialogue_utterances_filtered=utterances_dialogue_filtered,
         )
 
     if language in measures["english_langs"] or language in ['uk', 'ua']:
