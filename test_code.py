@@ -2005,9 +2005,10 @@ print(f"Using coherence backend: {coherence.COHERENCE_BACKEND}")
 # 3️⃣ Paths to the input and output directories
 # ------------------------------------------------------------------
 INPUT_DIR   = Path('/Users/pelmeshek1706/Desktop/projects/final_airest_voice/airest/tmp/role_labeled_whisper_like_stub_batch_ukr_26-03-2026')
-OUTPUT_DIR  = Path('/Users/pelmeshek1706/Desktop/projects/final_airest_voice/airest/tmp/result_phonoma_gemma_ukr_30-03-2026')
+OUTPUT_DIR  = Path('/Users/pelmeshek1706/Desktop/projects/final_airest_voice/airest/tmp/result_phonoma_gemma_ukr_3-04-2026_fix')
 
 # nums = ['380', '396', '379', '441', '482', '695', '656', '683', '457', '314', '713', '338', '601', '416', '400']
+# nums = ['381', '380', '343', '355', '396', '397', '354', '436', '378', '620', '379', '437', '421', '637', '636', '420', '335', '334', '322', '323', '441', '482', '657', '695', '656', '483', '440', '708', '456', '318', '640', '683', '682', '641', '319', '457', '709', '314', '315', '705', '713', '303', '698', '699', '302', '712', '676', '689', '677', '461', '477', '339', '661', '660', '338', '476', '363', '362', '374', '375', '417', '359', '601', '600', '358', '416', '400', '617', '401']
 nums = []
 oom = []# not enought memmory '380', '698'
 
